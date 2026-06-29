@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>
+        <%= title %>
+    </title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { bioroots: { light: '#dcfce7', DEFAULT: '#16a34a', dark: '#14532d' } } } }
+        }
+    </script>
+    <script src="<%= socketUrl %>/socket.io/socket.io.js"></script>
+</head>
+
+<body class="bg-gray-50 text-gray-800 font-sans antialiased min-h-screen flex flex-col">
+
+    <nav class="bg-bioroots-dark text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <svg class="w-8 h-8 text-bioroots-light" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z">
+                    </path>
+                </svg>
+                <h1 class="text-2xl font-bold tracking-wider">Kasir POS</h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <span class="text-sm font-medium">Halo, <%= user.nama %> (<%= user.username %>)</span>
+                <a href="/logout"
+                    class="bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-sm font-bold transition">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
+        <div id="toastContainer" class="fixed top-20 right-5 z-50 space-y-2"></div>
+
+        <div class="flex justify-between items-end mb-6">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">Daftar Transaksi (Workspace: <%= user.username %>)</h2>
+                <p class="text-sm text-gray-500">Konfirmasi pembayaran untuk memicu perintah ke Gudang. Data terisolasi.
+                </p>
+            </div>
+            <button onclick="loadOrders()"
+                class="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                    </path>
+                </svg>
+                Refresh Data
+            </button>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Order
+                            ID & Waktu</th>
+                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Pembeli
+                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Detail
+                            Item</th>
+                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Total
+                            Bayar</th>
+                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status
+                        </th>
+                        <th class="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Aksi
+                        </th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody" class="bg-white divide-y divide-gray-200">
+                    <tr>
+                        <td colspan="6" class="px-6 py-4 text-center text-sm text-gray-500">Memuat data...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script>
+        const CURRENT_USER = "<%= user.username %>";
+        const API_URL = "<%= apiUrl %>";
+    </script>
+
+    <script>
+        const tableBody = document.getElementById('tableBody');
+        const toastContainer = document.getElementById('toastContainer');
+        const formatRupiah = (angka) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(angka);
+
+        async function loadOrders() {
+            try {
+                const res = await fetch(`${API_URL}/pesanan`);
+                const data = await res.json();
+
+                // FILTER: Riwayat (Lunas) tersembunyi, tapi PENDING terlihat semua
+                const myOrders = data.filter(order => {
+                    if (CURRENT_USER !== 'kasir1' && CURRENT_USER !== 'kasir2') return true; // Manager lihat semua
+
+                    if (order.status_aktual !== 'PENDING') {
+                        return order.id_kasir === CURRENT_USER; // Riwayat lunas hanya milik sendiri
+                    }
+
+                    return true; // Pesanan PENDING dimunculkan ke semua kasir (tombolnya yang difilter nanti)
+                });
+
+                renderTable(myOrders);
+            } catch (error) {
+                tableBody.innerHTML = `<tr><td colspan="6" class="px-6 py-4 text-center text-red-500">Gagal memuat data backend.</td></tr>`;
+            }
+        }
+
+        function renderTable(orders) {
+            if (orders.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Belum ada transaksi di sistem.</td></tr>`;
+                return;
+            }
+
+            tableBody.innerHTML = orders.map(order => {
+                const date = new Date(order.waktu_transaksi).toLocaleString('id-ID');
+
+                // Render Detail Items (Sekarang menggunakan nama_bibit dari SQL)
+                let itemsHtml = '-';
+                if (order.items) {
+                    const parsedItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+                    itemsHtml = parsedItems.map(item =>
+                        `<div class="text-xs bg-gray-50 border border-gray-200 text-gray-700 rounded px-2 py-1 mb-1 block w-full">
+                            <span class="font-bold text-bioroots-dark">${item.qty_dus}x</span> ${item.nama_bibit}
+                        </div>`
+                    ).join('');
+                }
+
+                // Logika Pembagian Tugas (Load Balancing Visual)
+                const lastChar = order.order_id.slice(-1).toLowerCase();
+                const isKasir1 = ['0', '1', '2', '3', '4', '5', '6', '7'].includes(lastChar);
+                const assignedKasir = isKasir1 ? 'kasir1' : 'kasir2';
+
+                let statusBadge = '';
+                let actionBtn = '-';
+
+                if (order.status_aktual === 'PENDING') {
+                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Menunggu Bayar</span>`;
+
+                    // Cek apakah Kasir yang login berhak mengeksekusi ini
+                    if (CURRENT_USER === assignedKasir || (CURRENT_USER !== 'kasir1' && CURRENT_USER !== 'kasir2')) {
+                        actionBtn = `<button onclick="prosesPembayaran('${order.order_id}')" class="bg-bioroots hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded shadow transition w-full">Lunas</button>`;
+                    } else {
+                        // Jika bukan jatahnya, tombol disable (Sebagai visual cue UI/UX yang bagus)
+                        actionBtn = `<div class="bg-gray-100 text-gray-400 text-xs font-bold py-1.5 px-3 rounded text-center border border-gray-200">Diurus ${assignedKasir}</div>`;
+                    }
+                } else if (order.status_aktual === 'PAID') {
+                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Lunas (Ke Gudang)</span>`;
+                } else if (order.status_aktual === 'PACKED') {
+                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">Siap Dikirim</span>`;
+                } else if (order.status_aktual === 'DELIVERED') {
+                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Terkirim</span>`;
+                }
+
+                return `
+                    <tr class="hover:bg-gray-50 transition align-top">
+                        <td class="px-6 py-4">
+                            <div class="text-sm font-bold text-gray-900" title="${order.order_id}">${order.order_id.substring(0, 13)}...</div>
+                            <div class="text-xs text-gray-500">${date}</div>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-700">
+                            <div class="font-bold">${order.nama_pembeli || order.id_pembeli}</div>
+                        </td>
+                        <td class="px-6 py-4 min-w-[200px]">${itemsHtml}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${formatRupiah(order.total_bayar)}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">${statusBadge}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">${actionBtn}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function prosesPembayaran(orderId) {
+            const confirmMsg = `Yakin pesanan lunas?\nStok inventaris akan langsung dipotong dan dikirim ke Gudang.`;
+            if (!confirm(confirmMsg)) return;
+
+            try {
+                const res = await fetch(`${API_URL}/kasir/pay`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ order_id: orderId, id_kasir: CURRENT_USER })
+                });
+
+                const result = await res.json();
+
+                if (res.ok) {
+                    showToast('✅ Pembayaran Berhasil!', `Pesanan lunas dan event terkirim ke Gudang.`, 'bg-green-500');
+                    loadOrders();
+                } else {
+                    alert('Gagal: ' + result.error);
+                    loadOrders();
+                }
+            } catch (error) {
+                alert('Kesalahan jaringan: ' + error.message);
+            }
+        }
+
+        function showToast(title, message, bgColor) {
+            const toast = document.createElement('div');
+            toast.className = `${bgColor} text-white px-4 py-3 rounded-lg shadow-lg animate-fade-in max-w-sm`;
+            toast.innerHTML = `<strong>${title}</strong><br><span class="text-sm">${message}</span>`;
+            toastContainer.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 5000);
+        }
+
+        const socket = io('<%= socketUrl %>');
+
+        socket.on('system_alert', (data) => {
+            if (data.type === 'NEW_DRAFT') {
+                // Notif hanya muncul tanpa memaksa claim, akan terfilter otomatis saat loadOrders
+                showToast('🔔 Pesanan Baru Masuk!', `Ada draft pesanan baru dari Pelanggan.`, 'bg-blue-500');
+                loadOrders();
+            }
+        });
+
+        socket.on('delivery_completed', () => loadOrders());
+
+        loadOrders();
+    </script>
+</body>
+
+</html>

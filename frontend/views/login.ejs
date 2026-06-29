@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>
+        <%= title %>
+    </title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: { colors: { bioroots: { light: '#dcfce7', DEFAULT: '#16a34a', dark: '#14532d' } } }
+            }
+        }
+    </script>
+</head>
+
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+
+    <div class="bg-white p-8 rounded-xl shadow-lg max-w-sm w-full border border-gray-200 animate-fade-in">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-bioroots-dark">BioRoots</h1>
+            <p class="text-sm text-gray-500 mt-2">Portal Karyawan Internal</p>
+        </div>
+
+        <!-- Notifikasi Error Login -->
+        <% if (error) { %>
+            <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 text-sm" role="alert">
+                <span class="block sm:inline">
+                    <%= error %>
+                </span>
+            </div>
+            <% } %>
+
+                <form action="/login" method="POST" class="space-y-5">
+                    <div>
+                        <label for="username" class="block text-sm font-medium text-gray-700">Username</label>
+                        <input type="text" id="username" name="username" required
+                            class="mt-1 block w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-bioroots focus:border-bioroots outline-none transition">
+                    </div>
+
+                    <div>
+                        <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+                        <input type="password" id="password" name="password" required
+                            class="mt-1 block w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-bioroots focus:border-bioroots outline-none transition">
+                    </div>
+
+                    <button type="submit"
+                        class="w-full bg-bioroots hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                        Masuk Sistem
+                    </button>
+                </form>
+
+                <div class="mt-6 text-center text-xs text-gray-400">
+                    &copy; 2026 BioRoots B2B Distributed System
+                </div>
+    </div>
+
+</body>
+
+</html>

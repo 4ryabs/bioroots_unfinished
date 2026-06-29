@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>
+        <%= title %>
+    </title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { theme: { extend: { colors: { bioroots: { light: '#dcfce7', DEFAULT: '#16a34a', dark: '#14532d' } } } } }
+    </script>
+</head>
+
+<body class="bg-gray-50 text-gray-800 font-sans antialiased min-h-screen flex flex-col">
+
+    <div id="data-wrapper" data-katalog='<%- JSON.stringify(katalogBibit || []) %>'></div>
+
+    <nav class="bg-bioroots-dark text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-bold tracking-wider">BioRoots B2B</h1>
+            <span class="text-sm font-medium bg-white/20 px-3 py-1 rounded-full">Portal Pelanggan</span>
+        </div>
+    </nav>
+
+    <main class="flex-grow flex items-center justify-center p-6 my-8">
+        <div class="bg-white rounded-xl shadow-xl overflow-hidden max-w-3xl w-full border border-gray-100">
+            <div class="bg-bioroots/10 px-8 py-6 border-b border-bioroots/20">
+                <h2 class="text-2xl font-bold text-bioroots-dark">Formulir Pemesanan</h2>
+            </div>
+
+            <form id="orderForm" class="p-8 space-y-8">
+                <div class="bg-gray-50 p-5 rounded-lg border border-gray-200 space-y-4">
+                    <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wider border-b pb-2">Informasi Pembeli
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Nama Pembeli /
+                                Instansi</label>
+                            <input list="listPembeli" id="nama" autocomplete="off" placeholder="Ketik nama..." required
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-bioroots outline-none">
+                            <datalist id="listPembeli"></datalist>
+                            <input type="hidden" id="id_pembeli_hidden">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-1">Kontak (No. HP/WA)</label>
+                            <input type="text" id="kontak" placeholder="08..." required
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-bioroots outline-none">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-1">Alamat Pengiriman</label>
+                        <textarea id="alamat" rows="2" placeholder="Alamat..." required
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-bioroots outline-none"></textarea>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wider">Keranjang Pesanan</h3>
+                        <button type="button" onclick="tambahBaris()"
+                            class="text-xs bg-gray-800 hover:bg-black text-white px-3 py-1.5 rounded-md font-bold transition">+
+                            Tambah Produk</button>
+                    </div>
+                    <div id="itemContainer" class="space-y-3"></div>
+                </div>
+
+                <div class="bg-bioroots-dark text-white p-5 rounded-lg shadow-inner">
+                    <div class="flex justify-between items-center font-bold text-xl">
+                        <span>Total Bayar:</span>
+                        <span id="totalBayarLabel">Rp 0</span>
+                    </div>
+                </div>
+
+                <div id="alertBox" class="hidden rounded-lg p-4 text-sm font-medium"></div>
+
+                <button type="submit" id="submitBtn"
+                    class="w-full bg-bioroots hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-md">
+                    Kirim Pesanan
+                </button>
+            </form>
+        </div>
+    </main>
+
+    <script>
+        // Setup Awal
+        const API_URL = "<%= apiUrl %>";
+        const wrapper = document.getElementById('data-wrapper');
+        const KATALOG_BIBIT = JSON.parse(wrapper.dataset.katalog);
+        let DAFTAR_PEMBELI = [];
+
+        // Inisialisasi
+        async function init() {
+            await fetchPembeli();
+            tambahBaris();
+        }
+
+        async function fetchPembeli() {
+            try {
+                const res = await fetch(`${API_URL}/pembeli`);
+                DAFTAR_PEMBELI = await res.json();
+                document.getElementById('listPembeli').innerHTML = DAFTAR_PEMBELI.map(p => `<option value="${p.nama}">`).join('');
+            } catch (err) { console.error("Gagal load pembeli", err); }
+        }
+
+        // Logic Baris Dinamis
+        function tambahBaris() {
+            const rowId = 'row-' + Date.now();
+            const row = document.createElement('div');
+            row.id = rowId;
+            row.className = "flex flex-wrap md:flex-nowrap gap-3 items-end bg-white p-3 rounded-lg border border-gray-200";
+            row.innerHTML = `
+                <div class="w-full md:w-5/12">
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Bibit</label>
+                    <select onchange="updateBaris('${rowId}')" class="input-sku w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none" required>
+                        <option value="" disabled selected>Pilih...</option>
+                        ${KATALOG_BIBIT.map(b => `<option value="${b.sku}">${b.nama_bibit}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="w-1/4 md:w-2/12">
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Harga</label>
+                    <div class="display-harga px-2 py-2 text-xs font-bold text-gray-700 bg-gray-50 border border-gray-100 rounded-md text-center tabular-nums italic">Rp 0</div>
+                </div>
+                <div class="w-1/4 md:w-1/6">
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Stok</label>
+                    <div class="display-stok px-3 py-2 text-sm font-bold text-gray-700 bg-gray-100 rounded-md text-center">-</div>
+                </div>
+                <div class="w-1/4 md:w-1/6">
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Qty</label>
+                    <input type="number" min="1" value="1" oninput="updateBaris('${rowId}')" class="input-qty w-full px-3 py-2 text-sm border border-gray-300 rounded-md outline-none text-center" required>
+                </div>
+                <div class="hidden"><span class="row-subtotal" data-val="0"></span></div>
+                <button type="button" onclick="this.parentElement.remove(); hitungTotalGlobal();" class="text-red-400 hover:text-red-600 p-2 transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            `;
+            itemContainer.appendChild(row);
+        }
+
+        function updateBaris(rowId) {
+            const row = document.getElementById(rowId);
+            const sku = row.querySelector('.input-sku').value;
+            const qty = parseInt(row.querySelector('.input-qty').value) || 0;
+            const bibit = KATALOG_BIBIT.find(b => b.sku === sku);
+
+            if (bibit) {
+                const stokDiv = row.querySelector('.display-stok');
+                stokDiv.innerText = bibit.stok_aktual_dus;
+                stokDiv.className = `display-stok px-2 py-2 text-xs font-bold rounded-md text-center tabular-nums ${bibit.stok_aktual_dus < qty ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-green-50 text-green-700 border border-green-100'}`;
+
+                const hargaDiv = row.querySelector('.display-harga');
+                const hargaFormat = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(bibit.harga_per_dus);
+                hargaDiv.innerText = hargaFormat;
+
+                // Update subtotal untuk kalkulasi global
+                row.querySelector('.row-subtotal').setAttribute('data-val', bibit.harga_per_dus * qty);
+            }
+            hitungTotalGlobal();
+        }
+
+        function hitungTotalGlobal() {
+            let total = 0;
+            document.querySelectorAll('.row-subtotal').forEach(el => total += parseFloat(el.getAttribute('data-val')) || 0);
+            document.getElementById('totalBayarLabel').innerText = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(total);
+        }
+
+        // Logic Submit
+        document.getElementById('orderForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const items = Array.from(document.querySelectorAll('#itemContainer > div')).map(row => ({
+                sku: row.querySelector('.input-sku').value,
+                qty_dus: parseInt(row.querySelector('.input-qty').value),
+                subtotal: parseFloat(row.querySelector('.row-subtotal').getAttribute('data-val'))
+            }));
+
+            const payload = {
+                pembeli: {
+                    id_pembeli: document.getElementById('id_pembeli_hidden').value,
+                    nama: document.getElementById('nama').value,
+                    kontak: document.getElementById('kontak').value,
+                    alamat: document.getElementById('alamat').value
+                },
+                items: items
+            };
+
+            try {
+                const res = await fetch(`${API_URL}/pelanggan/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (res.ok) {
+                    alert("Pesanan sukses!");
+                    location.reload();
+                } else { alert("Gagal submit!"); }
+            } catch (err) { alert(err); }
+        });
+
+        init();
+    </script>
+</body>
+
+</html>

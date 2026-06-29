@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>
+        <%= title %>
+    </title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { bioroots: { light: '#e0e7ff', DEFAULT: '#4f46e5', dark: '#312e81' } } } } // Tema Indigo/Ungu untuk Kurir
+        }
+    </script>
+    <script src="<%= socketUrl %>/socket.io/socket.io.js"></script>
+</head>
+
+<body class="bg-gray-50 text-gray-800 font-sans antialiased min-h-screen flex flex-col">
+
+    <nav class="bg-bioroots-dark text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <svg class="w-8 h-8 text-bioroots-light" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0">
+                    </path>
+                </svg>
+                <h1 class="text-2xl font-bold tracking-wider">Logistik & Pengiriman</h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <span class="text-sm font-medium">Halo, <%= user.nama %> (<%= user.username %>)</span>
+                <a href="/logout"
+                    class="bg-red-500 hover:bg-red-600 px-3 py-1 rounded text-sm font-bold transition">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
+
+        <div id="toastContainer" class="fixed top-20 right-5 z-50 space-y-2"></div>
+
+        <div class="flex justify-between items-end mb-6">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">Daftar Manifest Pengiriman</h2>
+                <p class="text-sm text-gray-500">Ambil paket dari Gudang dan antarkan ke Pelanggan. Jangan lupa input
+                    POD.</p>
+            </div>
+            <button onclick="loadOrders()"
+                class="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                    </path>
+                </svg>
+                Refresh Data
+            </button>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Order
+                            ID & Mitra</th>
+                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status
+                            Pengiriman</th>
+                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Data
+                            POD (Penerima)</th>
+                        <th class="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Aksi
+                            Kurir</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody" class="bg-white divide-y divide-gray-200">
+                    <tr>
+                        <td colspan="4" class="px-6 py-4 text-center text-sm text-gray-500">Memuat data logistik...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div id="podModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6 transform transition-all">
+                <h3 class="text-xl font-bold text-gray-900 mb-4">Input Bukti Pengiriman (POD)</h3>
+                <input type="hidden" id="podOrderId">
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Nama Penerima Paket</label>
+                        <input type="text" id="podPenerima" placeholder="Misal: Bapak Budi / Security"
+                            class="mt-1 block w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-bioroots focus:border-bioroots outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Catatan Kondisi (Opsional)</label>
+                        <textarea id="podCatatan" rows="2" placeholder="Misal: Ditaruh di garasi"
+                            class="mt-1 block w-full px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg focus:ring-bioroots focus:border-bioroots outline-none"></textarea>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-end gap-3">
+                    <button onclick="closePodModal()"
+                        class="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg font-medium hover:bg-gray-300 transition">Batal</button>
+                    <button onclick="submitPOD()"
+                        class="px-4 py-2 bg-bioroots text-white rounded-lg font-bold hover:bg-indigo-700 transition">Simpan
+                        & Selesaikan</button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        const CURRENT_USER = "<%= user.username %>";
+        const API_URL = "<%= apiUrl %>"; 
+    </script>
+
+    <script>
+        const tableBody = document.getElementById('tableBody');
+        const toastContainer = document.getElementById('toastContainer');
+        const podModal = document.getElementById('podModal');
+
+        // 1. Load Data
+        async function loadOrders() {
+            try {
+                const res = await fetch(`${API_URL}/pesanan`);
+                const data = await res.json();
+
+                // FILTER HANYA UNTUK KURIR: Tampilkan yang PACKED (siap kirim) atau DELIVERED (history)
+                const kurirOrders = data.filter(order => order.status_aktual === 'PACKED' || order.status_aktual === 'DELIVERED');
+
+                renderTable(kurirOrders);
+            } catch (error) {
+                tableBody.innerHTML = `<tr><td colspan="4" class="px-6 py-4 text-center text-red-500">Gagal memuat data backend.</td></tr>`;
+            }
+        }
+
+        // 2. Render Tabel
+        function renderTable(orders) {
+            if (orders.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="4" class="px-6 py-8 text-center text-gray-500">Belum ada paket yang siap diantar.</td></tr>`;
+                return;
+            }
+
+            tableBody.innerHTML = orders.map(order => {
+                let statusBadge = '';
+                let actionBtn = '-';
+                let podInfo = '<span class="text-gray-400 italic">Belum ada POD</span>';
+
+                if (order.status_aktual === 'PACKED') {
+                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Menunggu Pickup Kurir</span>`;
+                    actionBtn = `<button onclick="openPodModal('${order.order_id}')" class="bg-bioroots hover:bg-indigo-700 text-white text-xs font-bold py-2 px-4 rounded shadow transition">Antar & Input POD</button>`;
+                } else if (order.status_aktual === 'DELIVERED') {
+                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Terkirim</span>`;
+                    // Asumsi: Backend kelak mengirimkan data POD (penerima) di kolom tertentu, misal order.nama_penerima
+                    podInfo = `<div class="text-sm font-medium text-gray-900">${order.nama_penerima || 'Selesai'}</div>`;
+                }
+
+                return `
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm font-bold text-gray-900">${order.order_id}</div>
+                            <div class="text-xs text-gray-500">${order.id_toko}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">${statusBadge}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">${podInfo}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">${actionBtn}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // 3. Logika Modal POD
+        function openPodModal(orderId) {
+            document.getElementById('podOrderId').value = orderId;
+            document.getElementById('podPenerima').value = '';
+            document.getElementById('podCatatan').value = '';
+            podModal.classList.remove('hidden');
+        }
+
+        function closePodModal() {
+            podModal.classList.add('hidden');
+        }
+
+        async function submitPOD() {
+            const orderId = document.getElementById('podOrderId').value;
+            const penerima = document.getElementById('podPenerima').value;
+            const catatan = document.getElementById('podCatatan').value;
+
+            if (!penerima) {
+                alert('Nama Penerima wajib diisi sebagai Bukti Pengiriman (POD)!');
+                return;
+            }
+
+            try {
+                // Catatan: Pastikan Backend Worker Kurir punya rute POST /api/kurir/deliver
+                const res = await fetch(`${API_URL}/kurir/deliver`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        order_id: orderId,
+                        id_kurir: CURRENT_USER,
+                        nama_penerima: penerima,
+                        catatan_pod: catatan
+                    })
+                });
+
+                const result = await res.json();
+
+                if (res.ok) {
+                    closePodModal();
+                    showToast('🚚 Pengiriman Sukses!', `Paket ${orderId} telah diterima oleh ${penerima}.`, 'bg-bioroots');
+                    loadOrders();
+                } else {
+                    alert('Gagal: ' + result.error);
+                }
+            } catch (error) {
+                alert('Kesalahan jaringan: ' + error.message);
+            }
+        }
+
+        // 4. UI Helper
+        function showToast(title, message, bgColor) {
+            const toast = document.createElement('div');
+            toast.className = `${bgColor} text-white px-4 py-3 rounded-lg shadow-lg animate-fade-in max-w-sm`;
+            toast.innerHTML = `<strong>${title}</strong><br><span class="text-sm">${message}</span>`;
+            toastContainer.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 5000);
+        }
+
+        // 5. WEBSOCKET REAL-TIME
+        const socket = io('<%= socketUrl %>');
+
+        // Mendengarkan saat Gudang selesai packing
+        socket.on('packing_completed', (data) => {
+            showToast('📦 Paket Siap Diambil!', `Gudang telah mem-packing pesanan ${data.order_id}. Segera lakukan pickup.`, 'bg-purple-600');
+            loadOrders();
+        });
+
+        loadOrders();
+    </script>
+</body>
+
+</html>

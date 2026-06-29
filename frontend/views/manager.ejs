@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>
+        <%= title %>
+    </title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { bioroots: { light: '#cbd5e1', DEFAULT: '#334155', dark: '#0f172a' } } } } // Tema Slate/Executive
+        }
+    </script>
+    <script src="<%= socketUrl %>/socket.io/socket.io.js"></script>
+</head>
+
+<body class="bg-gray-100 text-gray-800 font-sans antialiased min-h-screen flex flex-col">
+
+    <nav class="bg-bioroots-dark text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <svg class="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z">
+                    </path>
+                </svg>
+                <h1 class="text-2xl font-bold tracking-wider">Executive Dashboard</h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <span class="text-sm font-medium text-gray-300">Pusat Kendali Utama</span>
+                <a href="/logout"
+                    class="bg-red-500 hover:bg-red-600 px-4 py-1.5 rounded text-sm font-bold transition shadow">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 animate-fade-in space-y-6">
+
+        <div id="toastContainer" class="fixed top-20 right-5 z-50 space-y-2"></div>
+
+        <div class="flex justify-between items-end mb-2">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">Analitik Sistem Terdistribusi</h2>
+                <p class="text-sm text-gray-500">Data ditarik secara real-time dari Audit Logs MongoDB (Port 27017).</p>
+            </div>
+            <button onclick="loadAnalytics()"
+                class="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                    </path>
+                </svg>
+                Sinkronisasi Ulang
+            </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">Distribusi Beban Event (Kafka -> MongoDB)</h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="eventChart"></canvas>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <div class="bg-gradient-to-br from-green-500 to-green-600 p-6 rounded-xl shadow text-white">
+                    <h4 class="text-sm font-bold uppercase tracking-wider opacity-80">Total Sesi Inbound</h4>
+                    <p id="totalInbound" class="text-4xl font-bold mt-2">0</p>
+                </div>
+                <div class="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-xl shadow text-white">
+                    <h4 class="text-sm font-bold uppercase tracking-wider opacity-80">Total Transaksi Kasir</h4>
+                    <p id="totalKasir" class="text-4xl font-bold mt-2">0</p>
+                </div>
+                <div class="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-xl shadow text-white">
+                    <h4 class="text-sm font-bold uppercase tracking-wider opacity-80">Total Pengiriman Kurir</h4>
+                    <p id="totalKurir" class="text-4xl font-bold mt-2">0</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-6">
+            <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                <h3 class="text-lg font-bold text-gray-800">5 Aktivitas Restock (Inbound) Terakhir</h3>
+                <span class="text-xs font-bold bg-gray-200 text-gray-600 px-2 py-1 rounded">STOCK_REPLENISHED</span>
+            </div>
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-white">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Waktu
+                            Kejadian</th>
+                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">SKU
+                            Bibit</th>
+                        <th class="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Qty
+                            Masuk (Dus)</th>
+                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Aktor
+                            Gudang</th>
+                    </tr>
+                </thead>
+                <tbody id="tableInboundLog" class="bg-white divide-y divide-gray-100">
+                    <tr>
+                        <td colspan="4" class="px-6 py-4 text-center text-sm text-gray-500">Menganalisa log data...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+    </main>
+
+    <script>
+        const API_URL = "<%= apiUrl %>";
+        let eventChartInstance = null; // Menyimpan instance chart agar bisa di-destroy saat refresh
+
+        const tableInboundLog = document.getElementById('tableInboundLog');
+        const toastContainer = document.getElementById('toastContainer');
+
+        async function loadAnalytics() {
+            try {
+                // Menembak endpoint MongoDB yang sudah Anda buat
+                const res = await fetch(`${API_URL}/manager/analytics`);
+                const data = await res.json();
+
+                if (res.ok) {
+                    renderDashboard(data);
+                } else {
+                    console.error("Error dari backend:", data.error);
+                }
+            } catch (error) {
+                console.error("Kesalahan jaringan:", error);
+            }
+        }
+
+        function renderDashboard(data) {
+            const stats = data.eventStats;
+            const inbounds = data.recentInbounds;
+
+            // 1. Ekstrak data untuk Summary Cards
+            // (Sesuaikan pengecekan string _id ini dengan nama event/topik Kafka Anda)
+            const inboundCount = stats.find(s => s._id === 'STOCK_REPLENISHED' || s._id === 'inbound_stok')?.count || 0;
+            const kasirCount = stats.find(s => s._id === 'PAYMENT_COMPLETED' || s._id === 'transaksi_pos')?.count || 0;
+            const kurirCount = stats.find(s => s._id === 'DELIVERY_COMPLETED' || s._id === 'pengiriman_kurir')?.count || 0;
+
+            document.getElementById('totalInbound').innerText = inboundCount;
+            document.getElementById('totalKasir').innerText = kasirCount;
+            document.getElementById('totalKurir').innerText = kurirCount;
+
+            // 2. Render Grafik Chart.js
+            const labels = stats.map(s => s._id || 'Unknown Event');
+            const counts = stats.map(s => s.count);
+
+            const ctx = document.getElementById('eventChart').getContext('2d');
+
+            // Hancurkan chart lama jika sedang me-refresh data
+            if (eventChartInstance) {
+                eventChartInstance.destroy();
+            }
+
+            eventChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Frekuensi Event Disiarkan',
+                        data: counts,
+                        backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                        borderColor: 'rgba(37, 99, 235, 1)',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, ticks: { precision: 0 } }
+                    },
+                    plugins: {
+                        legend: { display: false }
+                    }
+                }
+            });
+
+            // 3. Render Tabel Riwayat Inbound
+            if (inbounds.length === 0) {
+                tableInboundLog.innerHTML = `<tr><td colspan="4" class="px-6 py-6 text-center text-gray-500">Belum ada aktivitas restock terekam.</td></tr>`;
+                return;
+            }
+
+            tableInboundLog.innerHTML = inbounds.map(log => {
+                const date = new Date(log.waktu_kejadian || log.timestamp || Date.now()).toLocaleString('id-ID');
+                // Fleksibel menangani bentuk payload di dalam event
+                const payload = log.payload || {};
+                const sku = payload.sku || payload.id_bibit || '-';
+                const qty = payload.qty_masuk_dus || payload.jumlah || 0;
+                const aktor = payload.id_aktor_gudang || payload.id_gudang || 'Sistem';
+
+                return `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">${date}</td>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-bold text-gray-900">${sku}</td>
+                        <td class="px-6 py-3 whitespace-nowrap text-center text-sm font-bold text-blue-600">+${qty}</td>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-700">${aktor}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function showToast(title, message) {
+            const toast = document.createElement('div');
+            toast.className = `bg-gray-800 text-white px-4 py-3 rounded-lg shadow-lg animate-fade-in max-w-sm`;
+            toast.innerHTML = `<strong>${title}</strong><br><span class="text-sm text-gray-300">${message}</span>`;
+            toastContainer.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 5000);
+        }
+
+        // WEBSOCKET: Dengarkan semua pergerakan Kafka untuk refresh visualisasi
+        const socket = io('<%= socketUrl %>');
+
+        socket.on('system_alert', (data) => {
+            showToast('📊 Log MongoDB Terupdate', 'Sistem mendeteksi event Kafka baru. Menyinkronkan grafik...');
+            // Beri jeda sedikit agar backend selesai insert ke Mongo sebelum frontend memanggil ulang analitiknya
+            setTimeout(loadAnalytics, 800);
+        });
+
+        // Pemuatan data pertama kali
+        loadAnalytics();
+    </script>
+</body>
+
+</html>
