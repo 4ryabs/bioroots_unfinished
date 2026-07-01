@@ -9,7 +9,6 @@
     </title>
     <link rel="stylesheet" href="/css/style.css">
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         tailwind.config = {
             theme: { extend: { colors: { bioroots: { light: '#cbd5e1', DEFAULT: '#334155', dark: '#0f172a' } } } } // Tema Slate/Executive
@@ -45,9 +44,10 @@
         <div class="flex justify-between items-end mb-2">
             <div>
                 <h2 class="text-2xl font-bold text-gray-800">Analitik Sistem Terdistribusi</h2>
-                <p class="text-sm text-gray-500">Data ditarik secara real-time dari Audit Logs MongoDB (Port 27017).</p>
+                <p class="text-sm text-gray-500">Data ditarik secara real-time dari Audit Logs MongoDB & Relasional
+                    MySQL.</p>
             </div>
-            <button onclick="loadAnalytics()"
+            <button onclick="loadDashboardData()"
                 class="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -62,11 +62,11 @@
 
             <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
                 <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
-                    <h3 class="text-lg font-bold text-gray-800">Alur Event Sistem (Real-time Audit)</h3>
+                    <h3 class="text-lg font-bold text-gray-800">Alur Event Sistem (Real-time Audit - MongoDB)</h3>
                 </div>
-                <div class="overflow-x-auto max-h-[400px] overflow-y-auto">
+                <div class="overflow-x-auto max-h-[320px] overflow-y-auto">
                     <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50 sticky top-0">
+                        <thead class="bg-gray-50 sticky top-0 z-10 shadow-sm">
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Waktu
                                     (HH:mm:ss)</th>
@@ -77,7 +77,8 @@
                         </thead>
                         <tbody id="tableEventFlow" class="bg-white divide-y divide-gray-200">
                             <tr>
-                                <td colspan="3" class="px-6 py-4 text-center text-sm text-gray-500">Memuat log...</td>
+                                <td colspan="3" class="px-6 py-4 text-center text-sm text-gray-500">Memuat log audit...
+                                </td>
                             </tr>
                         </tbody>
                     </table>
@@ -101,61 +102,74 @@
         </div>
 
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-6">
-            <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-                <h3 class="text-lg font-bold text-gray-800">5 Aktivitas Restock (Inbound) Terakhir</h3>
-                <span class="text-xs font-bold bg-gray-200 text-gray-600 px-2 py-1 rounded">STOCK_REPLENISHED</span>
+            <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+                <h3 class="text-lg font-bold text-gray-800">Daftar Seluruh Transaksi Terkini (MySQL Master)</h3>
             </div>
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-white">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Waktu
-                            Kejadian</th>
-                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">SKU
-                            Bibit</th>
-                        <th class="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase tracking-wider">Qty
-                            Masuk (Dus)</th>
-                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Aktor
-                            Gudang</th>
-                    </tr>
-                </thead>
-                <tbody id="tableInboundLog" class="bg-white divide-y divide-gray-100">
-                    <tr>
-                        <td colspan="4" class="px-6 py-4 text-center text-sm text-gray-500">Menganalisa log data...</td>
-                    </tr>
-                </tbody>
-            </table>
+            <div class="overflow-x-auto max-h-[400px] overflow-y-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50 sticky top-0 z-10 shadow-sm">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                Order ID & Waktu</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                Pembeli</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                Detail Item</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                Total Bayar</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">
+                                Status Aktual</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="bg-white divide-y divide-gray-200">
+                        <tr>
+                            <td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">Memuat data transaksi...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
 
     </main>
 
     <script>
         const API_URL = "<%= apiUrl %>";
-        let eventChartInstance = null; // Menyimpan instance chart agar bisa di-destroy saat refresh
-
-        const tableInboundLog = document.getElementById('tableInboundLog');
+        const tableEventFlow = document.getElementById('tableEventFlow');
+        const tableBody = document.getElementById('tableBody');
         const toastContainer = document.getElementById('toastContainer');
 
-        async function loadAnalytics() {
-            try {
-                // Menembak endpoint MongoDB yang sudah Anda buat
-                const res = await fetch(`${API_URL}/manager/analytics`);
-                const data = await res.json();
+        function formatRupiah(angka) {
+            return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(angka);
+        }
 
-                if (res.ok) {
-                    renderDashboard(data);
-                } else {
-                    console.error("Error dari backend:", data.error);
+        // FUNGSI UTAMA: Ambil log MongoDB dan data pesanan MySQL bersamaan
+        async function loadDashboardData() {
+            try {
+                // 1. Ambil data analitik & audit log dari MongoDB
+                const resMongo = await fetch(`${API_URL}/manager/analytics`);
+                if (resMongo.ok) {
+                    const dataMongo = await resMongo.json();
+                    renderMongoData(dataMongo);
+                }
+
+                // 2. Ambil data pesanan real-time dari MySQL
+                const resMysql = await fetch(`${API_URL}/pesanan`);
+                if (resMysql.ok) {
+                    const dataMysql = await resMysql.json();
+                    renderMysqlTable(dataMysql);
                 }
             } catch (error) {
-                console.error("Kesalahan jaringan:", error);
+                console.error("Kesalahan jaringan saat sinkronisasi:", error);
             }
         }
 
-        function renderDashboard(data) {
-            const stats = data.eventStats; // Data dari MongoDB
-            const events = data.recentEvents; // Data log mentah
+        // Render Bagian MongoDB (Cards & Audit Log)
+        function renderMongoData(data) {
+            const stats = data.eventStats || [];
+            const events = data.recentEvents || [];
 
-            // 1. Logika Summary Cards yang lebih fleksibel
+            // Update Angka Summary Cards
             const inboundCount = stats.find(s => s._id?.includes('STOCK') || s._id === 'inbound_stok')?.count || 0;
             const kasirCount = stats.find(s => s._id?.includes('PAID') || s._id === 'transaksi_pos')?.count || 0;
             const kurirCount = stats.find(s => s._id?.includes('DELIVERED') || s._id === 'pengiriman_kurir')?.count || 0;
@@ -164,11 +178,9 @@
             document.getElementById('totalKasir').innerText = kasirCount;
             document.getElementById('totalKurir').innerText = kurirCount;
 
-            // 2. Render Tabel Event Flow
-            const tableEventFlow = document.getElementById('tableEventFlow');
-
+            // Render Tabel Alur Event (Atas)
             if (events.length === 0) {
-                tableEventFlow.innerHTML = `<tr><td colspan="3" class="px-6 py-4 text-center text-gray-500">Belum ada data event.</td></tr>`;
+                tableEventFlow.innerHTML = `<tr><td colspan="3" class="px-6 py-4 text-center text-sm text-gray-500">Belum ada data log audit.</td></tr>`;
                 return;
             }
 
@@ -176,9 +188,6 @@
                 const time = new Date(ev.waktu_kejadian).toLocaleTimeString('id-ID', {
                     hour: '2-digit', minute: '2-digit', second: '2-digit'
                 });
-
-                // PENCARIAN ORDER ID YANG LEBIH CERDAS
-                // Cek di payload, atau langsung di root objek log
                 const payload = ev.payload || {};
                 const orderId = payload.order_id || ev.order_id || '-';
 
@@ -192,6 +201,54 @@
             }).join('');
         }
 
+        // Render Bagian MySQL (Tabel Utama Transaksi - Tanpa Kolom Aksi)
+        function renderMysqlTable(orders) {
+            if (orders.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-gray-500">Belum ada transaksi di sistem.</td></tr>`;
+                return;
+            }
+
+            tableBody.innerHTML = orders.map(order => {
+                const date = new Date(order.waktu_transaksi).toLocaleString('id-ID');
+
+                let itemsHtml = '-';
+                if (order.items) {
+                    const parsedItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+                    itemsHtml = parsedItems.map(item =>
+                        `<div class="text-xs bg-gray-50 border border-gray-200 text-gray-700 rounded px-2 py-1 mb-1 block w-full">
+                            <span class="font-bold text-bioroots-dark">${item.qty_dus}x</span> ${item.nama_bibit}
+                        </div>`
+                    ).join('');
+                }
+
+                let statusBadge = '';
+                if (order.status_aktual === 'PENDING') {
+                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Menunggu Bayar</span>`;
+                } else if (order.status_aktual === 'PAID') {
+                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Lunas (Di Gudang)</span>`;
+                } else if (order.status_aktual === 'PACKED') {
+                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">Siap Dikirim</span>`;
+                } else if (order.status_aktual === 'DELIVERED') {
+                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Selesai (Terkirim)</span>`;
+                }
+
+                return `
+                    <tr class="hover:bg-gray-50 transition align-top">
+                        <td class="px-6 py-4">
+                            <div class="text-sm font-bold text-gray-900" title="${order.order_id}">${order.order_id.substring(0, 13)}...</div>
+                            <div class="text-xs text-gray-500">${date}</div>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-700">
+                            <div class="font-bold">${order.nama_pembeli || order.id_pembeli}</div>
+                        </td>
+                        <td class="px-6 py-4 min-w-[200px]">${itemsHtml}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${formatRupiah(order.total_bayar)}</td>
+                        <td class="px-6 py-4 whitespace-nowrap">${statusBadge}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
         function showToast(title, message) {
             const toast = document.createElement('div');
             toast.className = `bg-gray-800 text-white px-4 py-3 rounded-lg shadow-lg animate-fade-in max-w-sm`;
@@ -200,17 +257,26 @@
             setTimeout(() => { toast.remove(); }, 5000);
         }
 
-        // WEBSOCKET: Dengarkan semua pergerakan Kafka untuk refresh visualisasi
+        // WEBSOCKET: Auto-refresh saat ada pergerakan event atau divisi lain menyelesaikan tugas
         const socket = io('<%= socketUrl %>');
 
-        socket.on('system_alert', (data) => {
-            showToast('📊 Log MongoDB Terupdate', 'Sistem mendeteksi event Kafka baru. Menyinkronkan grafik...');
-            // Beri jeda sedikit agar backend selesai insert ke Mongo sebelum frontend memanggil ulang analitiknya
-            setTimeout(loadAnalytics, 800);
+        socket.on('system_alert', () => {
+            showToast('📊 Log Sistem Masuk', 'Mendeteksi draft pesanan baru masuk ke antrean.');
+            setTimeout(loadDashboardData, 800);
         });
 
-        // Pemuatan data pertama kali
-        loadAnalytics();
+        socket.on('payment_completed', () => {
+            showToast('💰 Pembayaran Selesai', 'Ada pesanan yang baru dilunasi oleh Kasir.');
+            loadDashboardData();
+        });
+
+        socket.on('packing_completed', () => {
+            showToast('📦 Gudang Diperbarui', 'Pihak Logistik selesai mengemas barang.');
+            loadDashboardData();
+        });
+
+        // Jalankan sinkronisasi pertama kali saat web dibuka
+        loadDashboardData();
     </script>
 </body>
 

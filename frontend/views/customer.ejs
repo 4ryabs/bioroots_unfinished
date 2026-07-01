@@ -92,8 +92,8 @@
         const KATALOG_BIBIT = JSON.parse(config.dataset.katalog);
         let DAFTAR_PEMBELI = [];
 
-        // Inisialisasi Socket io secara otomatis mendeteksi origin
-        const socket = io();
+        const BACKEND_URL = API_URL.replace('/api', '');
+        const socket = io(BACKEND_URL);
 
         // Inisialisasi Data Awal
         async function init() {
@@ -211,7 +211,10 @@
                 if (res.ok) {
                     socket.emit('pesanan_baru_dibuat');
                     alert(`Sukses! Pesanan ${result.order_id} berhasil dibuat.`);
-                    location.reload();
+
+                    setTimeout(() => {
+                        location.reload();
+                    }, 500);
                 } else {
                     throw new Error(result.error || "Gagal menyimpan pesanan.");
                 }
