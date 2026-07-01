@@ -55,15 +55,25 @@ router.get('/pembeli', async (req, res) => {
 });
 
 // ==========================================
-// 1. PELANGGAN: Buat Draft Pesanan (Multi-Item)
+// 1. PELANGGAN: Buat Draft Pesanan (Multi-Item) WITH DEBUG LOG
 // ==========================================
 router.post('/pelanggan/checkout', async (req, res) => {
+    // 🔍 RADAR 1: Cek apakah payload dari frontend masuk atau kosong/undefined
+    console.log('====== REQUEST BODY MASUK ======');
+    console.log(JSON.stringify(req.body, null, 2));
+
     const { pembeli, items } = req.body;
+
+    // Validasi dasar mencegah crash akibat data kosong
+    if (!pembeli || !items || items.length === 0) {
+        return res.status(400).json({ error: 'Payload tidak lengkap atau keranjang kosong!' });
+    }
+
     let finalIdPembeli = pembeli.id_pembeli;
     const newOrderId = `ORD-${uuidv4()}`;
 
     // Hitung total bayar di sisi server demi keamanan
-    const total_bayar = items.reduce((sum, item) => sum + item.subtotal, 0);
+    const total_bayar = items.reduce((sum, item) => sum + (item.subtotal || 0), 0);
 
     const conn = await pool.getConnection();
     try {
@@ -72,6 +82,7 @@ router.post('/pelanggan/checkout', async (req, res) => {
         // 1. UPSERT PELANGGAN (Buat baru jika ID kosong)
         if (!finalIdPembeli) {
             finalIdPembeli = `CUST-${uuidv4()}`;
+            console.log(`Menginput pembeli baru: ${pembeli.nama} (${finalIdPembeli})`);
             await conn.query(
                 'INSERT INTO pembeli (id_pembeli, nama, alamat, kontak) VALUES (?, ?, ?, ?)',
                 [finalIdPembeli, pembeli.nama, pembeli.alamat, pembeli.kontak]
@@ -79,6 +90,7 @@ router.post('/pelanggan/checkout', async (req, res) => {
         }
 
         // 2. INSERT HEADER PESANAN
+        console.log(`Menginput header pesanan: ${newOrderId}`);
         await conn.query(
             'INSERT INTO pesanan (order_id, id_pembeli, total_bayar, status_aktual, id_kasir) VALUES (?, ?, ?, ?, ?)',
             [newOrderId, finalIdPembeli, total_bayar, 'PENDING', 'SYSTEM_WEB']
@@ -87,6 +99,7 @@ router.post('/pelanggan/checkout', async (req, res) => {
         // 3. INSERT MULTI-ITEM
         for (let item of items) {
             const newDetailId = `DET-${uuidv4()}`;
+            console.log(`Menginput detail pesanan: ${newDetailId} untuk SKU ${item.sku}`);
             await conn.query(
                 'INSERT INTO detail_pesanan (id_detail, order_id, sku, qty_dus, subtotal) VALUES (?, ?, ?, ?, ?)',
                 [newDetailId, newOrderId, item.sku, item.qty_dus, item.subtotal]
@@ -94,17 +107,26 @@ router.post('/pelanggan/checkout', async (req, res) => {
         }
 
         await conn.commit();
+        console.log(`✅ BERHASIL COMMIT: Order ${newOrderId} disimpan ke database.`);
 
         // 4. BROADCAST KAFKA
-        await sendMessage('notifikasi_sistem', {
-            type: 'NEW_DRAFT',
-            order_id: newOrderId,
-            pesan: `Ada pesanan masuk dari ${pembeli.nama}!`
-        });
+        try {
+            await sendMessage('notifikasi_sistem', {
+                type: 'NEW_DRAFT',
+                order_id: newOrderId,
+                pesan: `Ada pesanan masuk dari ${pembeli.nama}!`
+            });
+        } catch (kafkaError) {
+            console.error('⚠️ Kafka gagal mengirim pesan, tapi SQL tetap aman:', kafkaError.message);
+        }
 
         res.status(201).json({ message: 'Order berhasil dibuat', order_id: newOrderId });
     } catch (error) {
         await conn.rollback();
+        // 🔍 RADAR 2: Cetak pesan error asli dari MySQL di terminal backend
+        console.error('💥 TRANSACTION ROLLBACK. Alasan gagal:');
+        console.error(error);
+
         res.status(500).json({ error: error.message });
     } finally {
         conn.release();
@@ -112,7 +134,7 @@ router.post('/pelanggan/checkout', async (req, res) => {
 });
 
 // ==========================================
-// 2. KASIR: Proses Pembayaran & Potong Stok (ACID Strict)
+// 2. KASIR: Proses Pembayaran & Potong Stok (ACID Strict + Optimistic Locking)
 // ==========================================
 router.post('/kasir/pay', async (req, res) => {
     const { order_id, id_kasir } = req.body;
@@ -121,21 +143,41 @@ router.post('/kasir/pay', async (req, res) => {
     try {
         await conn.beginTransaction();
 
-        // 1. Update status pesanan jadi PAID
-        await conn.query(
+        // 1. Update status pesanan JIKA MASIH PENDING (Kunci Optimistic Locking)
+        const [updateResult] = await conn.query(
             'UPDATE pesanan SET status_aktual = ?, id_kasir = ? WHERE order_id = ? AND status_aktual = "PENDING"',
             ['PAID', id_kasir, order_id]
         );
 
-        // 2. Ambil detail pesanan untuk memotong stok
+        // ==========================================
+        // CEGAH BENTROK / RACE CONDITION
+        // Jika affectedRows === 0, berarti dalam sepersekian detik sebelumnya 
+        // sudah ada kasir lain yang mengubah statusnya dari PENDING ke PAID.
+        // ==========================================
+        if (updateResult.affectedRows === 0) {
+            await conn.rollback();
+            return res.status(409).json({
+                error: 'GAGAL: Pesanan ini baru saja selesai diklaim oleh kasir lain.'
+            });
+        }
+
+        // 2. Ambil detail pesanan untuk memotong stok (Hanya jalan jika berhasil diklaim)
         const [items] = await conn.query('SELECT sku, qty_dus FROM detail_pesanan WHERE order_id = ?', [order_id]);
 
         for (let item of items) {
-            // Pemotongan stok aktual
-            await conn.query(
+            // Pemotongan stok aktual + Cek ketersediaan stok
+            const [stokResult] = await conn.query(
                 'UPDATE inventaris SET stok_aktual_dus = stok_aktual_dus - ? WHERE sku = ? AND stok_aktual_dus >= ?',
                 [item.qty_dus, item.sku, item.qty_dus]
             );
+
+            // Jika stok habis saat mau dipotong, batalkan semua transaksi
+            if (stokResult.affectedRows === 0) {
+                await conn.rollback();
+                return res.status(400).json({
+                    error: `GAGAL: Stok untuk bibit ${item.sku} tidak mencukupi saat ini.`
+                });
+            }
         }
 
         await conn.commit();
@@ -147,7 +189,7 @@ router.post('/kasir/pay', async (req, res) => {
         res.json({ message: 'Pembayaran Lunas. Stok terpotong. Instruksi ke gudang telah dikirim.', order_id });
     } catch (error) {
         await conn.rollback();
-        res.status(500).json({ error: 'Gagal proses bayar atau stok tidak cukup: ' + error.message });
+        res.status(500).json({ error: 'Terjadi kesalahan sistem: ' + error.message });
     } finally {
         conn.release();
     }
@@ -204,18 +246,27 @@ router.post('/gudang/inbound', async (req, res) => {
 });
 
 // ==========================================
-// 5. KURIR: Pengiriman Selesai & PoD
+// 5. KURIR: Pengiriman Selesai & PoD (Pool & Claim + Anti Rebutan)
 // ==========================================
 router.post('/kurir/deliver', async (req, res) => {
-    // BERUBAH: Sesuai dengan payload EJS Kurir yang baru (teks POD)
     const { order_id, id_kurir, nama_penerima, catatan_pod } = req.body;
 
     try {
-        await pool.query('UPDATE pesanan SET status_aktual = ? WHERE order_id = ?', ['DELIVERED', order_id]);
+        // Optimistic Locking: Hanya update JIKA statusnya masih PACKED
+        const [updateResult] = await pool.query(
+            'UPDATE pesanan SET status_aktual = ?, id_kurir = ? WHERE order_id = ? AND status_aktual = "PACKED"',
+            ['DELIVERED', id_kurir, order_id]
+        );
+
+        if (updateResult.affectedRows === 0) {
+            return res.status(409).json({
+                error: 'GAGAL: Paket ini sudah diambil dan sedang diantar oleh kurir lain.'
+            });
+        }
 
         const eventPayload = { order_id, status: 'DELIVERED', id_kurir, nama_penerima, catatan_pod };
 
-        // Trigger topik kurir, nanti notifikasi WebSocket akan menyambar event ini
+        // Trigger topik kurir
         await sendMessage('pengiriman_kurir', eventPayload);
 
         res.json({ message: 'Pengiriman sukses. PoD tercatat.', order_id });
@@ -224,29 +275,27 @@ router.post('/kurir/deliver', async (req, res) => {
     }
 });
 
-// ==========================================
-// 6. MANAJER: Tarik Analitik dari MONGODB
-// ==========================================
+// Di routes/api.js, update route /manager/analytics
 router.get('/manager/analytics', async (req, res) => {
     try {
         const db = mongoClient.db('bioroots_logs');
         const logsCollection = db.collection('event_logs');
 
-        // Contoh Aggregation: Menghitung total event berdasarkan divisi/topik
+        // 1. Aggregation untuk Summary (Chart data lama)
         const eventStats = await logsCollection.aggregate([
             { $group: { _id: "$event_type", count: { $sum: 1 } } }
         ]).toArray();
 
-        // Contoh Aggregation: Mengambil riwayat inbound restock terbaru
-        const recentInbounds = await logsCollection.find({ event_type: "STOCK_REPLENISHED" })
+        // 2. RAW LOGS: Ambil 20 event terbaru dengan waktu presisi
+        const recentEvents = await logsCollection.find({})
             .sort({ waktu_kejadian: -1 })
-            .limit(5)
+            .limit(20)
             .toArray();
 
         res.json({
-            message: 'Data analitik berhasil ditarik dari MongoDB',
+            message: 'Data analitik berhasil ditarik',
             eventStats,
-            recentInbounds
+            recentEvents // Ini yang akan kita render ke tabel
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -289,8 +338,11 @@ router.get('/auth/seed', async (req, res) => {
     try {
         const db = mongoClient.db('bioroots_logs');
         const users = [
-            { username: 'kurir1', password: '123456', role: 'kurir', nama: 'Slamet Racing' },
-            { username: 'manager', password: '123456', role: 'manager', nama: 'Sriyanto' },
+            { username: 'gudang2', password: '123456', role: 'gudang', nama: 'Bobon Galogis' },
+            { username: 'gudang3', password: '123456', role: 'gudang', nama: 'Yanto' },
+            { username: 'gudang4', password: '123456', role: 'gudang', nama: 'Misun' },
+            { username: 'gudang5', password: '123456', role: 'gudang', nama: 'Sadi' },
+            { username: 'kurir2', password: '123456', role: 'kurir', nama: 'Sarpan Dragrace' },
         ];
         await db.collection('karyawan').insertMany(users);
         res.json({ message: 'Data karyawan berhasil ditambahkan ke MongoDB!' });

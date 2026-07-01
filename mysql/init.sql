@@ -45,6 +45,8 @@ CREATE TABLE pesanan (
     total_bayar DECIMAL(12,2) NOT NULL,
     status_aktual ENUM('PENDING', 'PAID', 'PACKED', 'DELIVERED') DEFAULT 'PENDING',
     id_kasir VARCHAR(20),
+    id_gudang VARCHAR(20),
+    id_kurir VARCHAR(20),
     waktu_transaksi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (id_pembeli) REFERENCES pembeli(id_pembeli) ON DELETE CASCADE
 );

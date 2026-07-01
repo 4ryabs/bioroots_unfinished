@@ -60,10 +60,27 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-            <div class="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <h3 class="text-lg font-bold text-gray-800 mb-4">Distribusi Beban Event (Kafka -> MongoDB)</h3>
-                <div class="relative h-64 w-full">
-                    <canvas id="eventChart"></canvas>
+            <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100 bg-gray-50">
+                    <h3 class="text-lg font-bold text-gray-800">Alur Event Sistem (Real-time Audit)</h3>
+                </div>
+                <div class="overflow-x-auto max-h-[400px] overflow-y-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Waktu
+                                    (HH:mm:ss)</th>
+                                <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Event / Divisi
+                                </th>
+                                <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Order ID</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableEventFlow" class="bg-white divide-y divide-gray-200">
+                            <tr>
+                                <td colspan="3" class="px-6 py-4 text-center text-sm text-gray-500">Memuat log...</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
 
@@ -135,75 +152,41 @@
         }
 
         function renderDashboard(data) {
-            const stats = data.eventStats;
-            const inbounds = data.recentInbounds;
+            const stats = data.eventStats; // Data dari MongoDB
+            const events = data.recentEvents; // Data log mentah
 
-            // 1. Ekstrak data untuk Summary Cards
-            // (Sesuaikan pengecekan string _id ini dengan nama event/topik Kafka Anda)
-            const inboundCount = stats.find(s => s._id === 'STOCK_REPLENISHED' || s._id === 'inbound_stok')?.count || 0;
-            const kasirCount = stats.find(s => s._id === 'PAYMENT_COMPLETED' || s._id === 'transaksi_pos')?.count || 0;
-            const kurirCount = stats.find(s => s._id === 'DELIVERY_COMPLETED' || s._id === 'pengiriman_kurir')?.count || 0;
+            // 1. Logika Summary Cards yang lebih fleksibel
+            const inboundCount = stats.find(s => s._id?.includes('STOCK') || s._id === 'inbound_stok')?.count || 0;
+            const kasirCount = stats.find(s => s._id?.includes('PAID') || s._id === 'transaksi_pos')?.count || 0;
+            const kurirCount = stats.find(s => s._id?.includes('DELIVERED') || s._id === 'pengiriman_kurir')?.count || 0;
 
             document.getElementById('totalInbound').innerText = inboundCount;
             document.getElementById('totalKasir').innerText = kasirCount;
             document.getElementById('totalKurir').innerText = kurirCount;
 
-            // 2. Render Grafik Chart.js
-            const labels = stats.map(s => s._id || 'Unknown Event');
-            const counts = stats.map(s => s.count);
+            // 2. Render Tabel Event Flow
+            const tableEventFlow = document.getElementById('tableEventFlow');
 
-            const ctx = document.getElementById('eventChart').getContext('2d');
-
-            // Hancurkan chart lama jika sedang me-refresh data
-            if (eventChartInstance) {
-                eventChartInstance.destroy();
-            }
-
-            eventChartInstance = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Frekuensi Event Disiarkan',
-                        data: counts,
-                        backgroundColor: 'rgba(59, 130, 246, 0.7)',
-                        borderColor: 'rgba(37, 99, 235, 1)',
-                        borderWidth: 1,
-                        borderRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: { beginAtZero: true, ticks: { precision: 0 } }
-                    },
-                    plugins: {
-                        legend: { display: false }
-                    }
-                }
-            });
-
-            // 3. Render Tabel Riwayat Inbound
-            if (inbounds.length === 0) {
-                tableInboundLog.innerHTML = `<tr><td colspan="4" class="px-6 py-6 text-center text-gray-500">Belum ada aktivitas restock terekam.</td></tr>`;
+            if (events.length === 0) {
+                tableEventFlow.innerHTML = `<tr><td colspan="3" class="px-6 py-4 text-center text-gray-500">Belum ada data event.</td></tr>`;
                 return;
             }
 
-            tableInboundLog.innerHTML = inbounds.map(log => {
-                const date = new Date(log.waktu_kejadian || log.timestamp || Date.now()).toLocaleString('id-ID');
-                // Fleksibel menangani bentuk payload di dalam event
-                const payload = log.payload || {};
-                const sku = payload.sku || payload.id_bibit || '-';
-                const qty = payload.qty_masuk_dus || payload.jumlah || 0;
-                const aktor = payload.id_aktor_gudang || payload.id_gudang || 'Sistem';
+            tableEventFlow.innerHTML = events.map(ev => {
+                const time = new Date(ev.waktu_kejadian).toLocaleTimeString('id-ID', {
+                    hour: '2-digit', minute: '2-digit', second: '2-digit'
+                });
+
+                // PENCARIAN ORDER ID YANG LEBIH CERDAS
+                // Cek di payload, atau langsung di root objek log
+                const payload = ev.payload || {};
+                const orderId = payload.order_id || ev.order_id || '-';
 
                 return `
                     <tr class="hover:bg-gray-50">
-                        <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500">${date}</td>
-                        <td class="px-6 py-3 whitespace-nowrap text-sm font-bold text-gray-900">${sku}</td>
-                        <td class="px-6 py-3 whitespace-nowrap text-center text-sm font-bold text-blue-600">+${qty}</td>
-                        <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-700">${aktor}</td>
+                        <td class="px-6 py-3 text-sm font-mono text-gray-600">${time}</td>
+                        <td class="px-6 py-3 text-sm font-bold text-blue-700">${ev.event_type}</td>
+                        <td class="px-6 py-3 text-sm text-gray-900">${orderId}</td>
                     </tr>
                 `;
             }).join('');

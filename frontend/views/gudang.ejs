@@ -38,16 +38,14 @@
     </nav>
 
     <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 animate-fade-in space-y-8">
-
         <div id="toastContainer" class="fixed top-20 right-5 z-50 space-y-2"></div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-
             <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
                 <div class="flex justify-between items-end mb-4">
                     <div>
-                        <h2 class="text-xl font-bold text-gray-800">📤 Outbound (Packing)</h2>
-                        <p class="text-xs text-gray-500 mt-1">Siapkan pesanan lunas ke Kurir.</p>
+                        <h2 class="text-xl font-bold text-gray-800">📤 Outbound (Workspace: <%= user.username %>)</h2>
+                        <p class="text-xs text-gray-500 mt-1">Siapkan pesanan lunas ke Kurir. Data terisolasi.</p>
                     </div>
                     <button onclick="loadOrders()"
                         class="bg-gray-100 hover:bg-gray-200 text-gray-700 p-2 rounded-lg transition text-xs font-bold">Refresh</button>
@@ -58,13 +56,15 @@
                         <thead class="bg-gray-50">
                             <tr>
                                 <th class="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Order ID</th>
-                                <th class="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Status</th>
+                                <th class="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Isi Paket
+                                    (Barang)</th>
+                                <!-- <th class="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Status</th> -->
                                 <th class="px-4 py-2 text-right text-xs font-bold text-gray-500 uppercase">Aksi</th>
                             </tr>
                         </thead>
                         <tbody id="tableOutbound" class="bg-white divide-y divide-gray-200">
                             <tr>
-                                <td colspan="3" class="px-4 py-4 text-center text-sm text-gray-500">Memuat...</td>
+                                <td colspan="4" class="px-4 py-4 text-center text-sm text-gray-500">Memuat...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -80,7 +80,6 @@
                     <button onclick="loadKatalog()"
                         class="bg-gray-100 hover:bg-gray-200 text-gray-700 p-2 rounded-lg transition text-xs font-bold">Refresh</button>
                 </div>
-
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
@@ -100,13 +99,12 @@
                     </table>
                 </div>
             </div>
-
         </div>
     </main>
 
     <script>
         const CURRENT_USER = "<%= user.username %>";
-        const API_URL = "<%= apiUrl %>"; // Nembak ke Worker (misal 5001)
+        const API_URL = "<%= apiUrl %>";
     </script>
 
     <script>
@@ -115,64 +113,100 @@
         const toastContainer = document.getElementById('toastContainer');
 
         // ==========================================
-        // FITUR 1: OUTBOUND (PACKING)
+        // 1. OUTBOUND (PACKING DENGAN POOL & CLAIM)
         // ==========================================
         async function loadOrders() {
             try {
-                // Catatan: Pastikan di backend worker 5001 rute GET /pesanan mengarah ke Backend Pusat
                 const res = await fetch(`${API_URL}/pesanan`);
                 const data = await res.json();
 
-                const gudangOrders = data.filter(order => order.status_aktual === 'PAID' || order.status_aktual === 'PACKED');
+                // FILTER: Logika "Pool & Claim" untuk Gudang
+                const myOrders = data.filter(order => {
+                    // Manager lihat semua
+                    if (!CURRENT_USER.startsWith('gudang')) return true;
 
-                if (gudangOrders.length === 0) {
-                    tableOutbound.innerHTML = `<tr><td colspan="3" class="px-4 py-4 text-center text-gray-500 text-sm">Tidak ada barang untuk dipacking.</td></tr>`;
-                    return;
-                }
+                    // KONDISI 1: Pesanan baru lunas dari Kasir (Antrean Terbuka Gudang)
+                    if (order.status_aktual === 'PAID') return true;
 
-                tableOutbound.innerHTML = gudangOrders.map(order => {
-                    let badge = order.status_aktual === 'PAID'
-                        ? `<span class="px-2 py-1 text-[10px] font-bold rounded-full bg-blue-100 text-blue-800">Perlu Packing</span>`
-                        : `<span class="px-2 py-1 text-[10px] font-bold rounded-full bg-purple-100 text-purple-800">Menunggu Kurir</span>`;
+                    // KONDISI 2: Pesanan sudah dikerjakan (PACKED/DELIVERED)
+                    // HANYA tampilkan untuk anak gudang yang mengemasnya!
+                    if (order.status_aktual === 'PACKED' || order.status_aktual === 'DELIVERED') {
+                        return order.id_gudang === CURRENT_USER;
+                    }
 
-                    let btn = order.status_aktual === 'PAID'
-                        ? `<button onclick="prosesPacking('${order.order_id}')" class="bg-bioroots hover:bg-yellow-600 text-white text-xs font-bold py-1 px-2 rounded">Pack</button>`
-                        : '-';
+                    return false;
+                });
 
-                    return `
-                        <tr class="hover:bg-gray-50">
-                            <td class="px-4 py-3 text-sm font-bold text-gray-900">${order.order_id}</td>
-                            <td class="px-4 py-3">${badge}</td>
-                            <td class="px-4 py-3 text-right">${btn}</td>
-                        </tr>
-                    `;
-                }).join('');
+                renderOutboundTable(myOrders);
             } catch (error) {
-                tableOutbound.innerHTML = `<tr><td colspan="3" class="text-center text-red-500 py-4">Gagal memuat pesanan.</td></tr>`;
+                tableOutbound.innerHTML = `<tr><td colspan="4" class="text-center text-red-500 py-4">Gagal memuat pesanan.</td></tr>`;
             }
         }
 
+        function renderOutboundTable(orders) {
+            if (orders.length === 0) {
+                tableOutbound.innerHTML = `<tr><td colspan="4" class="px-4 py-4 text-center text-gray-500 text-sm">Tidak ada barang untuk dipacking.</td></tr>`;
+                return;
+            }
+
+            tableOutbound.innerHTML = orders.map(order => {
+                let itemsHtml = '-';
+                if (order.items) {
+                    const parsedItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+                    itemsHtml = parsedItems.map(item =>
+                        `<div class="text-xs bg-gray-50 border border-gray-200 text-gray-700 rounded px-2 py-1 mb-1 block">
+                            <span class="font-bold text-bioroots-dark">${item.qty_dus}x</span> ${item.nama_bibit}
+                        </div>`
+                    ).join('');
+                }
+
+                // LOGIKA MINIMALIS:
+                // Jika PAID -> Tampilkan tombol Bungkus!
+                // Jika PACKED -> Tampilkan tanda centang Siap Pickup
+                let actionContent = order.status_aktual === 'PAID'
+                    ? `<button onclick="prosesPacking('${order.order_id}')" class="bg-bioroots hover:bg-yellow-600 text-white text-xs font-bold py-1.5 px-3 rounded w-full shadow">Bungkus!</button>`
+                    : `<div class="text-green-600 font-bold text-xs">✅ Siap Pickup</div>`;
+
+                return `
+                    <tr class="hover:bg-gray-50 align-top">
+                        <td class="px-4 py-3 text-sm font-bold text-gray-900">
+                            <div title="${order.order_id}">${order.order_id.substring(0, 13)}...</div>
+                            <div class="text-[10px] text-gray-500 font-normal mt-1">${order.nama_pembeli || order.id_pembeli}</div>
+                        </td>
+                        <td class="px-4 py-3 min-w-[150px]">${itemsHtml}</td>
+                        <td class="px-4 py-3 text-right">${actionContent}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
         async function prosesPacking(orderId) {
-            if (!confirm(`Selesaikan packing pesanan ${orderId}?`)) return;
+            if (!confirm(`Tandai pesanan lunas ini selesai dipacking?`)) return;
             try {
                 const res = await fetch(`${API_URL}/gudang/pack`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ order_id: orderId, id_gudang: CURRENT_USER })
+                    body: JSON.stringify({ order_id: orderId, id_gudang: CURRENT_USER }) // Pastikan variabelnya id_gudang
                 });
+
+                const result = await res.json();
+
                 if (res.ok) {
-                    showToast('📦 Packing Selesai', `Pesanan ${orderId} siap dikirim!`, 'bg-bioroots');
+                    showToast('📦 Packing Selesai', `Pesanan ${orderId} sudah menjadi milik Anda & siap dikirim!`, 'bg-bioroots');
+                    socket.emit('gudang_diklaim'); // Trigger refresh ke semua gudang lain
                     loadOrders();
+                } else {
+                    alert(result.error);
+                    loadOrders(); // Refresh karena sudah direbut orang
                 }
             } catch (error) { alert('Kesalahan jaringan!'); }
         }
 
         // ==========================================
-        // FITUR 2: INBOUND (STOK MASUK)
+        // 2. INBOUND STOK (SAMA SEPERTI SEBELUMNYA)
         // ==========================================
         async function loadKatalog() {
             try {
-                // Nembak ke endpoint inventaris
                 const res = await fetch(`${API_URL}/inventaris`);
                 const data = await res.json();
 
@@ -180,14 +214,14 @@
                     <tr class="hover:bg-gray-50">
                         <td class="px-4 py-3 text-sm">
                             <div class="font-bold text-gray-900">${item.nama_bibit}</div>
-                            <div class="text-xs text-gray-500">${item.sku}</div>
+                            <div class="text-[10px] text-gray-400">${item.sku}</div>
                         </td>
                         <td class="px-4 py-3 text-center text-sm font-bold ${item.stok_aktual_dus < 50 ? 'text-red-500' : 'text-green-600'}">
                             ${item.stok_aktual_dus}
                         </td>
                         <td class="px-4 py-3 text-right">
-                            <button onclick="tambahStok('${item.sku}', '${item.nama_bibit}')" class="bg-gray-800 hover:bg-black text-white text-xs font-bold py-1 px-3 rounded transition">
-                                + Inbound
+                            <button onclick="tambahStok('${item.sku}', '${item.nama_bibit}')" class="bg-gray-800 hover:bg-black text-white text-[10px] font-bold py-1.5 px-3 rounded transition">
+                                + INBOUND
                             </button>
                         </td>
                     </tr>
@@ -198,23 +232,18 @@
         }
 
         async function tambahStok(idBibit, namaBibit) {
-            const jumlah = prompt(`Berapa banyak stok masuk untuk ${namaBibit}?`, "100");
+            const jumlah = prompt(`Berapa dus pasokan masuk untuk ${namaBibit}?`, "100");
             if (!jumlah || isNaN(jumlah) || parseInt(jumlah) <= 0) return;
 
             try {
-                // Catatan: Pastikan di backend ada rute POST /api/gudang/inbound
                 const res = await fetch(`${API_URL}/gudang/inbound`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        sku: idBibit,
-                        qty_masuk_dus: parseInt(jumlah),
-                        id_aktor_gudang: CURRENT_USER
-                    })
+                    body: JSON.stringify({ sku: idBibit, qty_masuk_dus: parseInt(jumlah), id_aktor_gudang: CURRENT_USER })
                 });
 
                 if (res.ok) {
-                    showToast('📥 Inbound Berhasil', `Stok ${namaBibit} bertambah ${jumlah} unit.`, 'bg-blue-600');
+                    showToast('📥 Inbound Berhasil', `Stok bertambah ${jumlah} dus.`, 'bg-blue-600');
                     loadKatalog();
                 } else {
                     const result = await res.json();
@@ -236,8 +265,15 @@
 
         const socket = io('<%= socketUrl %>');
 
-        socket.on('payment_completed', () => loadOrders());
-        socket.on('stock_updated', () => loadKatalog()); // Update live kalau ada barang masuk/keluar
+        // Refresh saat kasir selesai bayar (masuk ke antrean gudang)
+        socket.on('payment_completed', () => {
+            showToast('💰 Pesanan Masuk', `Kasir baru saja melunasi pesanan. Siapkan barang!`, 'bg-blue-500');
+            loadOrders();
+        });
+
+        // Refresh live untuk inbound/outbound
+        socket.on('stock_updated', () => loadKatalog());
+        socket.on('packing_completed', () => loadOrders());
 
         // Load data awal
         loadOrders();

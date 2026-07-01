@@ -11,7 +11,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
-            theme: { extend: { colors: { bioroots: { light: '#e0e7ff', DEFAULT: '#4f46e5', dark: '#312e81' } } } } // Tema Indigo/Ungu untuk Kurir
+            theme: { extend: { colors: { bioroots: { light: '#e0e7ff', DEFAULT: '#4f46e5', dark: '#312e81' } } } } // Tema Indigo/Ungu
         }
     </script>
     <script src="<%= socketUrl %>/socket.io/socket.io.js"></script>
@@ -46,9 +46,9 @@
 
         <div class="flex justify-between items-end mb-6">
             <div>
-                <h2 class="text-2xl font-bold text-gray-800">Daftar Manifest Pengiriman</h2>
-                <p class="text-sm text-gray-500">Ambil paket dari Gudang dan antarkan ke Pelanggan. Jangan lupa input
-                    POD.</p>
+                <h2 class="text-2xl font-bold text-gray-800">Daftar Manifest (Workspace: <%= user.username %>)</h2>
+                <p class="text-sm text-gray-500">Ambil paket dari Gudang dan antarkan ke Pelanggan. Data riwayat
+                    terisolasi.</p>
             </div>
             <button onclick="loadOrders()"
                 class="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm">
@@ -66,18 +66,20 @@
                 <thead class="bg-gray-50">
                     <tr>
                         <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Order
-                            ID & Mitra</th>
+                            ID & Pembeli</th>
+                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Isi
+                            Paket</th>
                         <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status
-                            Pengiriman</th>
+                        </th>
                         <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Data
-                            POD (Penerima)</th>
+                            POD</th>
                         <th class="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Aksi
-                            Kurir</th>
+                        </th>
                     </tr>
                 </thead>
                 <tbody id="tableBody" class="bg-white divide-y divide-gray-200">
                     <tr>
-                        <td colspan="4" class="px-6 py-4 text-center text-sm text-gray-500">Memuat data logistik...</td>
+                        <td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">Memuat data logistik...</td>
                     </tr>
                 </tbody>
             </table>
@@ -129,42 +131,66 @@
                 const res = await fetch(`${API_URL}/pesanan`);
                 const data = await res.json();
 
-                // FILTER HANYA UNTUK KURIR: Tampilkan yang PACKED (siap kirim) atau DELIVERED (history)
-                const kurirOrders = data.filter(order => order.status_aktual === 'PACKED' || order.status_aktual === 'DELIVERED');
+                // FILTER LOGIKA POOL & CLAIM
+                const kurirOrders = data.filter(order => {
+                    // Manager lihat semua
+                    if (!CURRENT_USER.startsWith('kurir')) return true;
+
+                    // KONDISI 1: Terbuka untuk semua kurir jika baru dipacking
+                    if (order.status_aktual === 'PACKED') return true;
+
+                    // KONDISI 2: Hanya tampilkan history untuk kurir yang mengantar
+                    if (order.status_aktual === 'DELIVERED') {
+                        return order.id_kurir === CURRENT_USER;
+                    }
+
+                    return false;
+                });
 
                 renderTable(kurirOrders);
             } catch (error) {
-                tableBody.innerHTML = `<tr><td colspan="4" class="px-6 py-4 text-center text-red-500">Gagal memuat data backend.</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-red-500">Gagal memuat data backend.</td></tr>`;
             }
         }
 
         // 2. Render Tabel
         function renderTable(orders) {
             if (orders.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="4" class="px-6 py-8 text-center text-gray-500">Belum ada paket yang siap diantar.</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-gray-500">Belum ada paket yang siap diantar.</td></tr>`;
                 return;
             }
 
             tableBody.innerHTML = orders.map(order => {
+                // Render Detail Barang
+                let itemsHtml = '-';
+                if (order.items) {
+                    const parsedItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+                    itemsHtml = parsedItems.map(item =>
+                        `<div class="text-xs bg-gray-50 border border-gray-200 text-gray-700 rounded px-2 py-1 mb-1 block">
+                            <span class="font-bold text-indigo-700">${item.qty_dus}x</span> ${item.nama_bibit}
+                        </div>`
+                    ).join('');
+                }
+
                 let statusBadge = '';
                 let actionBtn = '-';
                 let podInfo = '<span class="text-gray-400 italic">Belum ada POD</span>';
 
                 if (order.status_aktual === 'PACKED') {
-                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Menunggu Pickup Kurir</span>`;
-                    actionBtn = `<button onclick="openPodModal('${order.order_id}')" class="bg-bioroots hover:bg-indigo-700 text-white text-xs font-bold py-2 px-4 rounded shadow transition">Antar & Input POD</button>`;
+                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Menunggu Pickup</span>`;
+                    actionBtn = `<button onclick="openPodModal('${order.order_id}')" class="bg-bioroots hover:bg-indigo-700 text-white text-xs font-bold py-2 px-4 rounded shadow transition w-full">Antar & Input POD</button>`;
                 } else if (order.status_aktual === 'DELIVERED') {
                     statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Terkirim</span>`;
-                    // Asumsi: Backend kelak mengirimkan data POD (penerima) di kolom tertentu, misal order.nama_penerima
-                    podInfo = `<div class="text-sm font-medium text-gray-900">${order.nama_penerima || 'Selesai'}</div>`;
+                    podInfo = `<div class="text-sm font-bold text-gray-900">${order.nama_pembeli || order.id_pembeli}</div>`;
                 }
 
                 return `
-                    <tr class="hover:bg-gray-50 transition">
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            <div class="text-sm font-bold text-gray-900">${order.order_id}</div>
-                            <div class="text-xs text-gray-500">${order.id_toko}</div>
+                    <tr class="hover:bg-gray-50 transition align-top">
+                        <td class="px-6 py-4">
+                            <div class="text-sm font-bold text-gray-900" title="${order.order_id}">${order.order_id.substring(0, 13)}...</div>
+                            <div class="text-xs text-gray-500 font-normal mt-1">${order.nama_pembeli || order.id_pembeli}</div>
                         </td>
+                        <td class="px-6 py-4 min-w-[200px]">${itemsHtml}</td>
                         <td class="px-6 py-4 whitespace-nowrap">${statusBadge}</td>
                         <td class="px-6 py-4 whitespace-nowrap">${podInfo}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">${actionBtn}</td>
@@ -196,7 +222,6 @@
             }
 
             try {
-                // Catatan: Pastikan Backend Worker Kurir punya rute POST /api/kurir/deliver
                 const res = await fetch(`${API_URL}/kurir/deliver`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -213,9 +238,11 @@
                 if (res.ok) {
                     closePodModal();
                     showToast('🚚 Pengiriman Sukses!', `Paket ${orderId} telah diterima oleh ${penerima}.`, 'bg-bioroots');
+                    socket.emit('kurir_diklaim'); // Beritahu kurir lain kalau paket ini sudah kita ambil
                     loadOrders();
                 } else {
                     alert('Gagal: ' + result.error);
+                    loadOrders(); // Refresh karena sudah direbut orang
                 }
             } catch (error) {
                 alert('Kesalahan jaringan: ' + error.message);
@@ -235,10 +262,13 @@
         const socket = io('<%= socketUrl %>');
 
         // Mendengarkan saat Gudang selesai packing
-        socket.on('packing_completed', (data) => {
-            showToast('📦 Paket Siap Diambil!', `Gudang telah mem-packing pesanan ${data.order_id}. Segera lakukan pickup.`, 'bg-purple-600');
+        socket.on('packing_completed', () => {
+            showToast('📦 Paket Siap Diambil!', `Ada pesanan baru yang selesai dipacking Gudang. Segera pickup!`, 'bg-purple-600');
             loadOrders();
         });
+
+        // Merefresh layar jika kurir lain duluan mengklaim orderan
+        socket.on('delivery_completed', () => loadOrders());
 
         loadOrders();
     </script>

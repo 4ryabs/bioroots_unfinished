@@ -100,15 +100,20 @@
                 const res = await fetch(`${API_URL}/pesanan`);
                 const data = await res.json();
 
-                // FILTER: Riwayat (Lunas) tersembunyi, tapi PENDING terlihat semua
+                // FILTER: Logika "Pool & Claim" yang sangat ketat
                 const myOrders = data.filter(order => {
-                    if (CURRENT_USER !== 'kasir1' && CURRENT_USER !== 'kasir2') return true; // Manager lihat semua
+                    // Manager bisa melihat semua data tanpa terkecuali
+                    if (CURRENT_USER !== 'kasir1' && CURRENT_USER !== 'kasir2') return true;
 
-                    if (order.status_aktual !== 'PENDING') {
-                        return order.id_kasir === CURRENT_USER; // Riwayat lunas hanya milik sendiri
+                    // KONDISI 1: Pesanan baru masuk dari Website (Belum diklaim siapa-siapa)
+                    // Akan muncul di SEMUA layar kasir yang sedang login saat itu
+                    if (order.status_aktual === 'PENDING' && order.id_kasir === 'SYSTEM_WEB') {
+                        return true;
                     }
 
-                    return true; // Pesanan PENDING dimunculkan ke semua kasir (tombolnya yang difilter nanti)
+                    // KONDISI 2: Pesanan sudah ditangani (Lunas/Dikirim)
+                    // HANYA muncul di layar kasir yang mengeksekusinya. Kasir lain tidak bisa mengintip!
+                    return order.id_kasir === CURRENT_USER;
                 });
 
                 renderTable(myOrders);
@@ -119,14 +124,14 @@
 
         function renderTable(orders) {
             if (orders.length === 0) {
-                tableBody.innerHTML = `<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Belum ada transaksi di sistem.</td></tr>`;
+                tableBody.innerHTML = `<tr><td colspan="6" class="px-6 py-8 text-center text-gray-500">Belum ada transaksi di antrean Anda.</td></tr>`;
                 return;
             }
 
             tableBody.innerHTML = orders.map(order => {
                 const date = new Date(order.waktu_transaksi).toLocaleString('id-ID');
 
-                // Render Detail Items (Sekarang menggunakan nama_bibit dari SQL)
+                // Render Detail Items dengan rapi
                 let itemsHtml = '-';
                 if (order.items) {
                     const parsedItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
@@ -137,24 +142,13 @@
                     ).join('');
                 }
 
-                // Logika Pembagian Tugas (Load Balancing Visual)
-                const lastChar = order.order_id.slice(-1).toLowerCase();
-                const isKasir1 = ['0', '1', '2', '3', '4', '5', '6', '7'].includes(lastChar);
-                const assignedKasir = isKasir1 ? 'kasir1' : 'kasir2';
-
                 let statusBadge = '';
                 let actionBtn = '-';
 
                 if (order.status_aktual === 'PENDING') {
                     statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Menunggu Bayar</span>`;
-
-                    // Cek apakah Kasir yang login berhak mengeksekusi ini
-                    if (CURRENT_USER === assignedKasir || (CURRENT_USER !== 'kasir1' && CURRENT_USER !== 'kasir2')) {
-                        actionBtn = `<button onclick="prosesPembayaran('${order.order_id}')" class="bg-bioroots hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded shadow transition w-full">Lunas</button>`;
-                    } else {
-                        // Jika bukan jatahnya, tombol disable (Sebagai visual cue UI/UX yang bagus)
-                        actionBtn = `<div class="bg-gray-100 text-gray-400 text-xs font-bold py-1.5 px-3 rounded text-center border border-gray-200">Diurus ${assignedKasir}</div>`;
-                    }
+                    // Tombol lunas tersedia untuk siapa saja yang melihatnya pertama kali
+                    actionBtn = `<button onclick="prosesPembayaran('${order.order_id}')" class="bg-bioroots hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded shadow transition w-full">Lunas</button>`;
                 } else if (order.status_aktual === 'PAID') {
                     statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Lunas (Ke Gudang)</span>`;
                 } else if (order.status_aktual === 'PACKED') {
@@ -182,7 +176,7 @@
         }
 
         async function prosesPembayaran(orderId) {
-            const confirmMsg = `Yakin pesanan lunas?\nStok inventaris akan langsung dipotong dan dikirim ke Gudang.`;
+            const confirmMsg = `Yakin pesanan lunas?\nStok inventaris akan dipotong dan pesanan ini akan masuk ke riwayat Anda.`;
             if (!confirm(confirmMsg)) return;
 
             try {
@@ -196,6 +190,9 @@
 
                 if (res.ok) {
                     showToast('✅ Pembayaran Berhasil!', `Pesanan lunas dan event terkirim ke Gudang.`, 'bg-green-500');
+                    // Karena kita pakai Socket.io, ini akan memicu refresh di SEMUA browser kasir,
+                    // sehingga pesanan ini otomatis hilang dari layar kasir sebelahnya!
+                    socket.emit('pesanan_diklaim');
                     loadOrders();
                 } else {
                     alert('Gagal: ' + result.error);
@@ -218,12 +215,13 @@
 
         socket.on('system_alert', (data) => {
             if (data.type === 'NEW_DRAFT') {
-                // Notif hanya muncul tanpa memaksa claim, akan terfilter otomatis saat loadOrders
-                showToast('🔔 Pesanan Baru Masuk!', `Ada draft pesanan baru dari Pelanggan.`, 'bg-blue-500');
+                showToast('🔔 Pesanan Baru Masuk!', `Ada draft pesanan baru di antrean terbuka.`, 'bg-blue-500');
                 loadOrders();
             }
         });
 
+        // Memastikan layar kasir lain ikut merefresh data saat ada yang mengklaim pesanan
+        socket.on('payment_completed', () => loadOrders());
         socket.on('delivery_completed', () => loadOrders());
 
         loadOrders();

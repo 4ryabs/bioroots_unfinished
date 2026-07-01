@@ -25,7 +25,7 @@ const BACKEND_WORKERS = {
 };
 
 // Backend Utama (Gateway untuk Auth & Ambil Katalog Bibit)
-const BACKEND_MAIN = 'http://localhost:3000/api';
+const BACKEND_MAIN = 'http://192.168.66.194:3000/api';
 const apiClient = axios.create({ baseURL: BACKEND_MAIN });
 
 app.set('view engine', 'ejs');
@@ -112,8 +112,8 @@ app.get('/kasir', requireAuth('kasir'), (req, res) => {
     res.render('kasir', {
         title: 'BioRoots - Kasir POS',
         user: req.session.user,
-        apiUrl: `http://localhost:${workerPort}/api`,
-        socketUrl: `http://localhost:3000`
+        apiUrl: `http://192.168.66.194:${workerPort}/api`,
+        socketUrl: `http://192.168.66.194:3000`
     });
 });
 
@@ -124,8 +124,8 @@ app.get('/gudang', requireAuth('gudang'), (req, res) => {
     res.render('gudang', {
         title: 'BioRoots - Gudang',
         user: req.session.user,
-        apiUrl: `http://localhost:${workerPort}/api`,
-        socketUrl: `http://localhost:3000`
+        apiUrl: `http://192.168.66.194:${workerPort}/api`,
+        socketUrl: `http://192.168.66.194:3000`
     });
 });
 
@@ -136,8 +136,8 @@ app.get('/kurir', requireAuth('kurir'), (req, res) => {
     res.render('kurir', {
         title: 'BioRoots - Kurir',
         user: req.session.user,
-        apiUrl: `http://localhost:${workerPort}/api`,
-        socketUrl: `http://localhost:3000`
+        apiUrl: `http://192.168.66.194:${workerPort}/api`,
+        socketUrl: `http://192.168.66.194:3000`
     });
 });
 
@@ -147,11 +147,11 @@ app.get('/manager', requireAuth('manager'), (req, res) => {
     res.render('manager', {
         title: 'BioRoots - Manager Dashboard',
         user: req.session.user,
-        apiUrl: `http://localhost:${workerPort}/api`,
-        socketUrl: `http://localhost:3000`
+        apiUrl: `http://192.168.66.194:${workerPort}/api`,
+        socketUrl: `http://192.168.66.194:3000`
     });
 });
 
 app.listen(PORT, () => {
-    console.log(`🎨 Frontend Server BioRoots berjalan di http://localhost:${PORT}`);
+    console.log(`🎨 Frontend Server BioRoots berjalan di http://192.168.66.194:${PORT}`);
 });
