@@ -181,7 +181,10 @@
                     actionBtn = `<button onclick="openPodModal('${order.order_id}')" class="bg-bioroots hover:bg-indigo-700 text-white text-xs font-bold py-2 px-4 rounded shadow transition w-full">Antar & Input POD</button>`;
                 } else if (order.status_aktual === 'DELIVERED') {
                     statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Terkirim</span>`;
-                    podInfo = `<div class="text-sm font-bold text-gray-900">${order.nama_pembeli || order.id_pembeli}</div>`;
+                    podInfo = `
+                        <div class="text-sm font-bold text-gray-900">Penerima: ${order.nama_penerima || '-'}</div>
+                        <div class="text-xs text-gray-500 mt-1">Catatan: ${order.catatan_pod || 'Tidak ada catatan'}</div>
+                    `;
                 }
 
                 return `

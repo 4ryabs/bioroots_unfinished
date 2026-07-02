@@ -48,6 +48,8 @@ CREATE TABLE pesanan (
     id_gudang VARCHAR(20),
     id_kurir VARCHAR(20),
     waktu_transaksi TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    nama_penerima VARCHAR(255) NULL, 
+    catatan_pod TEXT NULL,
     FOREIGN KEY (id_pembeli) REFERENCES pembeli(id_pembeli) ON DELETE CASCADE
 );
 

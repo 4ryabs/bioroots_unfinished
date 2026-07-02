@@ -252,10 +252,10 @@ router.post('/kurir/deliver', async (req, res) => {
     const { order_id, id_kurir, nama_penerima, catatan_pod } = req.body;
 
     try {
-        // Optimistic Locking: Hanya update JIKA statusnya masih PACKED
+        // Optimistic Locking: Update status sekaligus simpan data POD
         const [updateResult] = await pool.query(
-            'UPDATE pesanan SET status_aktual = ?, id_kurir = ? WHERE order_id = ? AND status_aktual = "PACKED"',
-            ['DELIVERED', id_kurir, order_id]
+            'UPDATE pesanan SET status_aktual = ?, id_kurir = ?, nama_penerima = ?, catatan_pod = ? WHERE order_id = ? AND status_aktual = "PACKED"',
+            ['DELIVERED', id_kurir, nama_penerima, catatan_pod, order_id]
         );
 
         if (updateResult.affectedRows === 0) {
@@ -269,7 +269,7 @@ router.post('/kurir/deliver', async (req, res) => {
         // Trigger topik kurir
         await sendMessage('pengiriman_kurir', eventPayload);
 
-        res.json({ message: 'Pengiriman sukses. PoD tercatat.', order_id });
+        res.json({ message: 'Pengiriman sukses. PoD tercatat di Database.', order_id });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -338,11 +338,16 @@ router.get('/auth/seed', async (req, res) => {
     try {
         const db = mongoClient.db('bioroots_logs');
         const users = [
+            { username: 'kasir1', password: '123456', role: 'kasir', nama: 'Siti Kurang' },
+            { username: 'kasir2', password: '123456', role: 'kasir', nama: 'Budi Bagi' },
+            { username: 'gudang1', password: '123456', role: 'gudang', nama: 'Bagas Wrapper' },
             { username: 'gudang2', password: '123456', role: 'gudang', nama: 'Bobon Galogis' },
-            { username: 'gudang3', password: '123456', role: 'gudang', nama: 'Yanto' },
+            { username: 'gudang3', password: '123456', role: 'gudang', nama: 'Yanto Gudang Garam' },
             { username: 'gudang4', password: '123456', role: 'gudang', nama: 'Misun' },
-            { username: 'gudang5', password: '123456', role: 'gudang', nama: 'Sadi' },
+            { username: 'gudang5', password: '123456', role: 'gudang', nama: 'Sadi Kopling' },
+            { username: 'kurir1', password: '123456', role: 'kurir', nama: 'Asep Racing' },
             { username: 'kurir2', password: '123456', role: 'kurir', nama: 'Sarpan Dragrace' },
+            { username: 'manager', password: '123456', role: 'manager', nama: 'Budiono Siregar' },
         ];
         await db.collection('karyawan').insertMany(users);
         res.json({ message: 'Data karyawan berhasil ditambahkan ke MongoDB!' });
