@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>
+        <%= title %>
+    </title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { bioroots: { light: '#fef08a', DEFAULT: '#eab308', dark: '#854d0e' } } } }
+        }
+    </script>
+    <script src="<%= socketUrl %>/socket.io/socket.io.js"></script>
+</head>
+
+<body class="bg-gray-50 text-gray-800 font-sans antialiased min-h-screen flex flex-col relative">
+
+    <!-- MODAL PILIH LOKASI GUDANG (Full Screen Lock) -->
+    <div id="locationModal"
+        class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[100] hidden backdrop-blur-sm">
+        <div class="bg-white p-8 rounded-xl shadow-2xl max-w-md w-full text-center transform transition-all scale-100">
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Pilih Lokasi Kerja</h2>
+            <p class="text-gray-500 mb-6 text-sm">Pilih gudang tempat Anda bertugas hari ini. Data akan disesuaikan
+                dengan lokasi Anda.</p>
+            <div class="grid grid-cols-2 gap-4">
+                <button onclick="setLokasi('gudang1')"
+                    class="bg-bioroots hover:bg-yellow-600 text-white font-bold py-6 rounded-xl shadow-md transition hover:-translate-y-1 flex flex-col items-center">
+                    <span class="text-4xl mb-2">🏭</span>
+                    Gudang 1
+                </button>
+                <button onclick="setLokasi('gudang2')"
+                    class="bg-bioroots hover:bg-yellow-600 text-white font-bold py-6 rounded-xl shadow-md transition hover:-translate-y-1 flex flex-col items-center">
+                    <span class="text-4xl mb-2">🏢</span>
+                    Gudang 2
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <nav class="bg-bioroots-dark text-white shadow-md z-10">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <svg class="w-8 h-8 text-bioroots-light" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path>
+                </svg>
+                <div class="flex flex-col">
+                    <h1 class="text-xl font-bold tracking-wider leading-tight">Staff Gudang & Logistik</h1>
+                    <!-- Tombol ganti lokasi -->
+                    <span id="lokasiBadge" onclick="resetLokasi()" title="Klik untuk ganti lokasi"
+                        class="text-[10px] bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-bold cursor-pointer w-max mt-1 hover:bg-yellow-200 transition">
+                        LOKASI: BELUM DIPILIH
+                    </span>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <span class="text-sm font-medium hidden md:block">Halo, <%= user.nama %> (<%= user.username %>)</span>
+                <a href="/logout"
+                    class="bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded text-sm font-bold transition shadow">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 animate-fade-in space-y-8">
+        <div id="toastContainer" class="fixed top-20 right-5 z-50 space-y-2"></div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <!-- PANEL OUTBOUND -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                <div class="flex justify-between items-end mb-4 border-b pb-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-gray-800">📤 Outbound <span id="labelOutboundGudang"
+                                class="text-bioroots"></span></h2>
+                        <p class="text-xs text-gray-500 mt-1">Siapkan pesanan yang ditugaskan ke lokasi Anda.</p>
+                    </div>
+                    <button onclick="loadOrders()"
+                        class="bg-gray-100 hover:bg-gray-200 text-gray-700 p-2 rounded-lg transition text-xs font-bold border border-gray-200 shadow-sm">Refresh</button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Order ID</th>
+                                <th class="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Isi Paket
+                                    (Barang)</th>
+                                <th class="px-4 py-2 text-right text-xs font-bold text-gray-500 uppercase">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableOutbound" class="bg-white divide-y divide-gray-200">
+                            <tr>
+                                <td colspan="3" class="px-4 py-4 text-center text-sm text-gray-500">Memuat...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- PANEL INBOUND -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                <div class="flex justify-between items-end mb-4 border-b pb-4">
+                    <div>
+                        <h2 class="text-xl font-bold text-gray-800">📥 Inbound (Stok Masuk)</h2>
+                        <p class="text-xs text-gray-500 mt-1">Catat pasokan bibit baru secara spesifik ke <span
+                                id="labelInboundGudang" class="font-bold text-bioroots">lokasi Anda</span>.</p>
+                    </div>
+                    <button onclick="loadKatalog()"
+                        class="bg-gray-100 hover:bg-gray-200 text-gray-700 p-2 rounded-lg transition text-xs font-bold border border-gray-200 shadow-sm">Refresh</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-2 text-left text-xs font-bold text-gray-500 uppercase">Bibit</th>
+                                <th class="px-4 py-2 text-center text-xs font-bold text-gray-500 uppercase"
+                                    title="Total stok dari seluruh gudang">Stok Global ℹ️</th>
+                                <th class="px-4 py-2 text-right text-xs font-bold text-gray-500 uppercase">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableInbound" class="bg-white divide-y divide-gray-200">
+                            <tr>
+                                <td colspan="3" class="px-4 py-4 text-center text-sm text-gray-500">Memuat katalog...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const CURRENT_USER = "<%= user.username %>";
+        const API_URL = "<%= apiUrl %>";
+    </script>
+
+    <script>
+        // ==========================================
+        // 0. LOGIKA PEMILIHAN LOKASI GUDANG (MULTI-TENANT)
+        // ==========================================
+        let LOKASI_GUDANG = localStorage.getItem('lokasi_gudang_kerja');
+
+        function initLokasi() {
+            if (!LOKASI_GUDANG) {
+                // Kunci layar dan paksa user memilih
+                document.getElementById('locationModal').classList.remove('hidden');
+            } else {
+                document.getElementById('lokasiBadge').innerText = `📍 LOKASI: ${LOKASI_GUDANG.toUpperCase()}`;
+                document.getElementById('labelOutboundGudang').innerText = `(${LOKASI_GUDANG.toUpperCase()})`;
+                document.getElementById('labelInboundGudang').innerText = LOKASI_GUDANG.toUpperCase();
+
+                // Load Data
+                loadOrders();
+                loadKatalog();
+            }
+        }
+
+        function setLokasi(gudang) {
+            localStorage.setItem('lokasi_gudang_kerja', gudang);
+            LOKASI_GUDANG = gudang;
+            document.getElementById('locationModal').classList.add('hidden');
+            initLokasi();
+        }
+
+        function resetLokasi() {
+            if (confirm("Yakin ingin mengganti lokasi gudang kerja?")) {
+                localStorage.removeItem('lokasi_gudang_kerja');
+                LOKASI_GUDANG = null;
+                initLokasi();
+            }
+        }
+
+        // ==========================================
+        // 1. OUTBOUND (PACKING BERDASARKAN GUDANG)
+        // ==========================================
+        const tableOutbound = document.getElementById('tableOutbound');
+        const tableInbound = document.getElementById('tableInbound');
+        const toastContainer = document.getElementById('toastContainer');
+
+        async function loadOrders() {
+            if (!LOKASI_GUDANG) return; // Jangan load kalau belum milih lokasi
+
+            try {
+                const res = await fetch(`${API_URL}/pesanan`);
+                const data = await res.json();
+
+                console.log("=== 🔍 DEBUG FILTER GUDANG ===");
+                console.log("📍 Lokasi Staf Saat Ini:", LOKASI_GUDANG);
+
+                // FILTER STRICT MULTI-WAREHOUSE
+                const myOrders = data.filter(order => {
+                    // Hanya cek yang statusnya sudah bukan PENDING
+                    if (order.status_aktual !== 'PENDING') {
+                        console.log(`📦 Order: ${order.order_id} | Status: ${order.status_aktual} | Tujuan: "${order.id_gudang_tujuan}"`);
+
+                        // Cek apakah tujuan sama dengan lokasi staf
+                        if (order.id_gudang_tujuan === LOKASI_GUDANG) {
+                            console.log("   ✅ LOLOS! Ditampilkan ke tabel.");
+                            return true;
+                        } else {
+                            console.log("   ❌ DITOLAK! Beda gudang atau tujuan kosong.");
+                        }
+                    }
+                    return false;
+                });
+
+                renderOutboundTable(myOrders);
+            } catch (error) {
+                console.error("Terjadi error saat load:", error);
+                tableOutbound.innerHTML = `<tr><td colspan="3" class="text-center text-red-500 py-4">Gagal memuat pesanan.</td></tr>`;
+            }
+        }
+
+        function renderOutboundTable(orders) {
+            if (orders.length === 0) {
+                tableOutbound.innerHTML = `<tr><td colspan="3" class="px-4 py-8 text-center text-gray-500 text-sm">Tidak ada barang untuk dipacking di ${LOKASI_GUDANG.replace('_', ' ')}.</td></tr>`;
+                return;
+            }
+
+            tableOutbound.innerHTML = orders.map(order => {
+                let itemsHtml = '-';
+                if (order.items) {
+                    const parsedItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
+                    itemsHtml = parsedItems.map(item =>
+                        `<div class="text-xs bg-gray-50 border border-gray-200 text-gray-700 rounded px-2 py-1 mb-1 block">
+                            <span class="font-bold text-bioroots-dark">${item.qty_dus}x</span> ${item.nama_bibit}
+                        </div>`
+                    ).join('');
+                }
+
+                let actionContent = order.status_aktual === 'PAID'
+                    ? `<button onclick="prosesPacking('${order.order_id}')" class="bg-bioroots hover:bg-yellow-600 text-white text-xs font-bold py-2 px-3 rounded w-full shadow transition transform hover:scale-105">Tandai Selesai Bungkus</button>`
+                    : `<div class="text-green-600 font-bold text-xs bg-green-50 py-1.5 px-3 rounded text-center border border-green-200">✅ Menunggu Pickup</div>`;
+
+                return `
+                    <tr class="hover:bg-gray-50 align-top transition">
+                        <td class="px-4 py-4 text-sm font-bold text-gray-900">
+                            <div title="${order.order_id}">${order.order_id.substring(0, 13)}...</div>
+                            <div class="text-[10px] text-gray-500 font-normal mt-1">${order.nama_pembeli || order.id_pembeli}</div>
+                        </td>
+                        <td class="px-4 py-4 min-w-[180px]">${itemsHtml}</td>
+                        <td class="px-4 py-4 text-right align-middle">${actionContent}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function prosesPacking(orderId) {
+            if (!confirm(`Tandai pesanan lunas ini selesai dipacking?`)) return;
+            try {
+                const res = await fetch(`${API_URL}/gudang/pack`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    // UPDATE: Pastikan mengirimkan id_aktor_gudang
+                    body: JSON.stringify({ order_id: orderId, id_aktor_gudang: CURRENT_USER })
+                });
+
+                const result = await res.json();
+
+                if (res.ok) {
+                    showToast('📦 Packing Selesai', `Pesanan ${orderId} siap diserahkan ke kurir!`, 'bg-bioroots');
+                    socket.emit('packing_completed'); // Trigger Manager & Kurir
+                    loadOrders();
+                } else {
+                    alert(result.error);
+                    loadOrders();
+                }
+            } catch (error) { alert('Kesalahan jaringan!'); }
+        }
+
+        // ==========================================
+        // 2. INBOUND STOK DENGAN INJEKSI LOKASI
+        // ==========================================
+        async function loadKatalog() {
+            if (!LOKASI_GUDANG) return;
+
+            try {
+                const res = await fetch(`${API_URL}/inventaris`);
+                const data = await res.json();
+
+                tableInbound.innerHTML = data.map(item => `
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="px-4 py-3 text-sm">
+                            <div class="font-bold text-gray-900">${item.nama_bibit}</div>
+                            <div class="text-[10px] text-gray-400">${item.sku.substring(0, 13)}...</div>
+                        </td>
+                        <td class="px-4 py-3 text-center text-sm font-bold ${item.stok_aktual_dus < 50 ? 'text-red-500' : 'text-green-600'}">
+                            ${item.stok_aktual_dus}
+                        </td>
+                        <td class="px-4 py-3 text-right">
+                            <button onclick="tambahStok('${item.sku}', '${item.nama_bibit}')" class="bg-gray-800 hover:bg-black text-white text-[10px] font-bold py-2 px-3 rounded shadow transition transform hover:-translate-y-0.5">
+                                + INBOUND
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                tableInbound.innerHTML = `<tr><td colspan="3" class="text-center text-red-500 py-4">Gagal memuat katalog.</td></tr>`;
+            }
+        }
+
+        async function tambahStok(idBibit, namaBibit) {
+            const jumlah = prompt(`Berapa dus pasokan masuk untuk ${namaBibit}?\n(Data akan masuk ke ${LOKASI_GUDANG.replace('_', ' ')})`, "100");
+            if (!jumlah || isNaN(jumlah) || parseInt(jumlah) <= 0) return;
+
+            try {
+                const res = await fetch(`${API_URL}/gudang/inbound`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    // UPDATE PENTING: Injeksi id_gudang ke dalam payload Inbound
+                    body: JSON.stringify({
+                        sku: idBibit,
+                        qty_masuk_dus: parseInt(jumlah),
+                        id_aktor_gudang: CURRENT_USER,
+                        id_gudang: LOKASI_GUDANG
+                    })
+                });
+
+                if (res.ok) {
+                    showToast('📥 Inbound Berhasil', `Stok bertambah ${jumlah} dus di ${LOKASI_GUDANG.replace('_', ' ')}.`, 'bg-blue-600');
+                    loadKatalog();
+                } else {
+                    const result = await res.json();
+                    alert('Gagal: ' + result.error);
+                }
+            } catch (error) { alert('Kesalahan jaringan!'); }
+        }
+
+        // ==========================================
+        // 3. UI HELPER & WEBSOCKET
+        // ==========================================
+        function showToast(title, message, bgColor) {
+            const toast = document.createElement('div');
+            toast.className = `${bgColor} text-white px-4 py-3 rounded-lg shadow-lg animate-fade-in max-w-sm z-50`;
+            toast.innerHTML = `<strong>${title}</strong><br><span class="text-sm">${message}</span>`;
+            toastContainer.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 5000);
+        }
+
+        const socket = io('<%= socketUrl %>');
+
+        // Refresh saat kasir selesai bayar (masuk ke antrean gudang)
+        socket.on('payment_completed', () => {
+            showToast('💰 Pesanan Masuk', `Kasir baru saja menugaskan pesanan ke gudang. Cek antrean Anda!`, 'bg-blue-500');
+            loadOrders();
+        });
+
+        // Refresh live untuk inbound/outbound
+        socket.on('stock_updated', () => loadKatalog());
+
+        // Panggil fungsi inisialisasi pertama kali
+        initLokasi();
+    </script>
+</body>
+
+</html>

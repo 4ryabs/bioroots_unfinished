@@ -14,14 +14,15 @@ const PORT = process.env.PORT || 3001;
 const BACKEND_WORKERS = {
     'kasir1': 4001,
     'kasir2': 4002,
-    'gudang1': 5001,
-    'gudang2': 5002,
-    'gudang3': 5003,
-    'gudang4': 5004,
-    'gudang5': 5005,
+    'staff_gudang1': 5001,
+    'staff_gudang2': 5002,
+    'staff_gudang3': 5003,
+    'staff_gudang4': 5004,
     'kurir1': 6001,
     'kurir2': 6002,
-    'manager': 7001
+    'manager': 7001,
+    'manager_gudang1': 8001,
+    'manager_gudang2': 8002,
 };
 
 // Backend Utama (Gateway untuk Auth & Ambil Katalog Bibit)
@@ -117,12 +118,24 @@ app.get('/kasir', requireAuth('kasir'), (req, res) => {
     });
 });
 
-app.get('/gudang', requireAuth('gudang'), (req, res) => {
+app.get('/staff_gudang', requireAuth('staff_gudang'), (req, res) => {
     const username = req.session.user.username;
     const workerPort = BACKEND_WORKERS[username] || 5001;
 
-    res.render('gudang', {
-        title: 'BioRoots - Gudang',
+    res.render('staff_gudang', {
+        title: 'BioRoots - Staff Gudang',
+        user: req.session.user,
+        apiUrl: `http://localhost:${workerPort}/api`,
+        socketUrl: `http://localhost:3000`
+    });
+});
+
+app.get('/manager_gudang', requireAuth('manager_gudang'), (req, res) => {
+    const username = req.session.user.username;
+    const workerPort = BACKEND_WORKERS[username] || 8001;
+
+    res.render('manager_gudang', {
+        title: 'BioRoots - Manager Gudang',
         user: req.session.user,
         apiUrl: `http://localhost:${workerPort}/api`,
         socketUrl: `http://localhost:3000`

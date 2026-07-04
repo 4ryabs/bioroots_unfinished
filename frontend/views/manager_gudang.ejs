@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="id">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>
+        <%= title %>
+    </title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { bioroots: { light: '#ccfbf1', DEFAULT: '#0d9488', dark: '#115e59' } } } } // Tema Teal/Managerial
+        }
+    </script>
+    <script src="<%= socketUrl %>/socket.io/socket.io.js"></script>
+</head>
+
+<body class="bg-gray-50 text-gray-800 font-sans antialiased min-h-screen flex flex-col">
+
+    <nav class="bg-bioroots-dark text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <svg class="w-8 h-8 text-bioroots-light" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2">
+                    </path>
+                </svg>
+                <div class="flex flex-col">
+                    <h1 class="text-xl font-bold tracking-wider leading-tight">Control Tower Logistik</h1>
+                    <span class="text-[10px] bg-teal-200 text-teal-900 px-2 py-0.5 rounded-full font-bold w-max mt-1">
+                        MANAGER GUDANG
+                    </span>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <span class="text-sm font-medium hidden md:block">Halo, <%= user.nama %> (<%= user.username %>)</span>
+                <a href="/logout"
+                    class="bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded text-sm font-bold transition shadow">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 animate-fade-in space-y-8">
+        <div id="toastContainer" class="fixed top-20 right-5 z-50 space-y-2"></div>
+
+        <div class="flex justify-between items-end border-b border-gray-200 pb-4">
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800">Penugasan Armada Kurir</h2>
+                <p class="text-sm text-gray-500">Monitor paket yang sudah di-packing dari Gudang 1 & 2 dan teruskan ke
+                    Kurir.</p>
+            </div>
+            <button onclick="loadOrders()"
+                class="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm">
+                Refresh Data
+            </button>
+        </div>
+
+        <!-- TABEL PAKET MENUNGGU PICKUP -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="bg-teal-50 px-6 py-3 border-b border-teal-100 flex items-center gap-2">
+                <span class="text-xl">📦</span>
+                <h3 class="font-bold text-teal-900">Antrean Siap Pickup (PACKED)</h3>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Order ID</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Tujuan Pengiriman
+                            </th>
+                            <th class="px-6 py-3 text-center text-xs font-bold text-gray-500 uppercase">Lokasi
+                                Pengambilan</th>
+                            <th class="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase min-w-[200px]">
+                                Assign Kurir</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tablePacked" class="bg-white divide-y divide-gray-200">
+                        <tr>
+                            <td colspan="4" class="px-6 py-8 text-center text-gray-500">Memuat data...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TABEL RIWAYAT PENGIRIMAN -->
+        <div
+            class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mt-8 opacity-80 hover:opacity-100 transition">
+            <div class="bg-gray-50 px-6 py-3 border-b border-gray-200 flex items-center gap-2">
+                <span class="text-xl">✅</span>
+                <h3 class="font-bold text-gray-700">Riwayat Pengiriman Selesai (DELIVERED)</h3>
+            </div>
+            <div class="overflow-x-auto max-h-[300px] overflow-y-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-100 sticky top-0">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Order ID</th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Kurir Bertugas
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Penerima (POD)
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase">Catatan</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableHistory" class="bg-white divide-y divide-gray-200">
+                        <tr>
+                            <td colspan="4" class="px-6 py-4 text-center text-gray-500 text-sm">Memuat data...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const CURRENT_USER = "<%= user.username %>";
+        const API_URL = "<%= apiUrl %>";
+    </script>
+
+    <script>
+        const tablePacked = document.getElementById('tablePacked');
+        const tableHistory = document.getElementById('tableHistory');
+        const toastContainer = document.getElementById('toastContainer');
+
+        async function loadOrders() {
+            try {
+                const res = await fetch(`${API_URL}/pesanan`);
+                const data = await res.json();
+
+                // 1. Filter Data yang Siap Pick-up (PACKED)
+                const packedOrders = data.filter(order => order.status_aktual === 'PACKED');
+                renderPackedTable(packedOrders);
+
+                // 2. Filter Data yang Selesai Dikirim (DELIVERED)
+                const historyOrders = data.filter(order => order.status_aktual === 'DELIVERED');
+                renderHistoryTable(historyOrders);
+
+            } catch (error) {
+                tablePacked.innerHTML = `<tr><td colspan="4" class="text-center text-red-500 py-4">Gagal memuat pesanan.</td></tr>`;
+            }
+        }
+
+        function renderPackedTable(orders) {
+            if (orders.length === 0) {
+                tablePacked.innerHTML = `<tr><td colspan="4" class="px-6 py-8 text-center text-gray-500 text-sm">Belum ada paket yang selesai di-packing oleh staf gudang.</td></tr>`;
+                return;
+            }
+
+            tablePacked.innerHTML = orders.map(order => {
+                // Formatting Lokasi Pengambilan (Gudang Asal)
+                const asalGudang = order.id_gudang_tujuan === 'gudang1'
+                    ? '<span class="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-md font-bold text-xs">🏭 Gudang 1</span>'
+                    : '<span class="bg-orange-100 text-orange-800 px-2 py-1 rounded-md font-bold text-xs">🏢 Gudang 2</span>';
+
+                // Dropdown Assign Kurir
+                // (Untuk simulasi, kita pakai hardcode nama kurir yang ada di database seed)
+                const actionBtn = `
+                    <div class="flex flex-col gap-2">
+                        <select id="kurir-${order.order_id}" class="text-xs border border-gray-300 rounded p-1.5 outline-none focus:ring-1 focus:ring-teal-500 w-full bg-gray-50 font-medium text-gray-700 cursor-pointer">
+                            <option value="" disabled selected>-- Pilih Kurir --</option>
+                            <option value="kurir1">Kurir 1 (Asep Racing)</option>
+                            <option value="kurir2">Kurir 2 (Sarpan Dragrace)</option>
+                        </select>
+                        <button onclick="prosesAssignKurir('${order.order_id}')" class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold py-2 px-3 rounded shadow transition w-full">Tugaskan Kurir</button>
+                    </div>
+                `;
+
+                return `
+                    <tr class="hover:bg-teal-50 transition align-top">
+                        <td class="px-6 py-4">
+                            <div class="text-sm font-bold text-gray-900" title="${order.order_id}">${order.order_id.substring(0, 13)}...</div>
+                            <div class="text-xs text-gray-500 mt-1">${new Date(order.waktu_transaksi).toLocaleString('id-ID')}</div>
+                        </td>
+                        <td class="px-6 py-4 max-w-[250px]">
+                            <div class="text-sm font-bold text-gray-900 mb-1">${order.nama_pembeli || order.id_pembeli}</div>
+                            <div class="text-xs text-gray-500 flex items-start gap-1" title="${order.alamat_pembeli || '-'}">
+                                <span>📍</span> <span class="truncate">${order.alamat_pembeli || '-'}</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-center align-middle">${asalGudang}</td>
+                        <td class="px-6 py-4 text-right">${actionBtn}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderHistoryTable(orders) {
+            if (orders.length === 0) {
+                tableHistory.innerHTML = `<tr><td colspan="4" class="px-6 py-6 text-center text-gray-500 text-sm">Belum ada riwayat pengiriman.</td></tr>`;
+                return;
+            }
+
+            tableHistory.innerHTML = orders.map(order => {
+                return `
+                    <tr class="hover:bg-gray-50 transition">
+                        <td class="px-6 py-3 text-sm font-bold text-gray-900">${order.order_id.substring(0, 13)}...</td>
+                        <td class="px-6 py-3 text-sm font-bold text-teal-700">🚚 ${order.id_kurir}</td>
+                        <td class="px-6 py-3 text-sm text-gray-800">${order.nama_penerima || '-'}</td>
+                        <td class="px-6 py-3 text-xs text-gray-500 italic">${order.catatan_pod || '-'}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function prosesAssignKurir(orderId) {
+            const selectKurir = document.getElementById(`kurir-${orderId}`);
+            const kurirId = selectKurir.value;
+
+            if (!kurirId) {
+                alert("Pilih kurir terlebih dahulu sebelum menugaskan!");
+                selectKurir.focus();
+                return;
+            }
+
+            if (!confirm(`Tugaskan pesanan ini kepada ${kurirId}?`)) return;
+
+            try {
+                // Memanggil Endpoint API khusus Manager Gudang yang kita buat sebelumnya
+                const res = await fetch(`${API_URL}/manager_gudang/assign_kurir`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        order_id: orderId,
+                        id_kurir: kurirId
+                    })
+                });
+
+                const result = await res.json();
+
+                if (res.ok) {
+                    showToast('✅ Berhasil Assign', `Pesanan telah diteruskan ke layar ${kurirId}.`, 'bg-teal-600');
+                    // Mengirim sinyal socket agar aplikasi si Kurir yang di-assign otomatis nge-refresh!
+                    socket.emit('kurir_ditugaskan');
+                    loadOrders();
+                } else {
+                    alert('Gagal: ' + result.error);
+                    loadOrders();
+                }
+            } catch (error) {
+                alert('Kesalahan jaringan: ' + error.message);
+            }
+        }
+
+        function showToast(title, message, bgColor) {
+            const toast = document.createElement('div');
+            toast.className = `${bgColor} text-white px-4 py-3 rounded-lg shadow-lg animate-fade-in max-w-sm z-50`;
+            toast.innerHTML = `<strong>${title}</strong><br><span class="text-sm">${message}</span>`;
+            toastContainer.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 5000);
+        }
+
+        // ==========================================
+        // WEBSOCKET REAL-TIME LISTENER
+        // ==========================================
+        const socket = io('<%= socketUrl %>');
+
+        // Refresh tabel saat Staf Gudang selesai mengemas barang
+        socket.on('packing_completed', () => {
+            showToast('📦 Paket Selesai Dipacking!', 'Ada paket baru yang siap Anda tugaskan ke kurir.', 'bg-teal-600');
+            loadOrders();
+        });
+
+        // Refresh riwayat saat Kurir selesai mengantar barang (POD)
+        socket.on('delivery_completed', () => loadOrders());
+
+        loadOrders();
+    </script>
+</body>
+
+</html>

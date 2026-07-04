@@ -20,8 +20,14 @@ CREATE TABLE inventaris (
     sku VARCHAR(50) PRIMARY KEY,
     nama_bibit VARCHAR(100) NOT NULL,
     harga_per_dus DECIMAL(10,2) NOT NULL,
-    stok_aktual_dus INT NOT NULL CHECK (stok_aktual_dus >= 0),
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE stok_gudang (
+    sku VARCHAR(50) NOT NULL,
+    id_gudang VARCHAR(50) NOT NULL,
+    stok_aktual_dus INT NOT NULL CHECK (stok_aktual_dus >= 0),
+    PRIMARY KEY (sku, id_gudang)
 );
 
 -- ==========================================
@@ -42,6 +48,7 @@ CREATE TABLE riwayat_inbound (
 CREATE TABLE pesanan (
     order_id VARCHAR(50) PRIMARY KEY,
     id_pembeli VARCHAR(50) NOT NULL,
+    id_gudang_tujuan VARCHAR(50) NOT NULL,
     total_bayar DECIMAL(12,2) NOT NULL,
     status_aktual ENUM('PENDING', 'PAID', 'PACKED', 'DELIVERED') DEFAULT 'PENDING',
     id_kasir VARCHAR(20),
@@ -70,13 +77,22 @@ CREATE TABLE detail_pesanan (
 -- SEEDING DUMMY DATA (DENGAN FORMAT UUID)
 -- ==========================================
 
--- Seed Pembeli
-INSERT INTO pembeli (id_pembeli, nama, alamat, kontak) VALUES
-('CUST-a1b2c3d4-e5f6-7890-abcd-123456789012', 'Budi Santoso', 'Jl. Kemerdekaan No. 45', '081234567890'),
-('CUST-f6e5d4c3-b2a1-0987-dcba-210987654321', 'Koperasi Tani Makmur', 'Jl. Raya Pertanian Km 5', '081987654321');
+-- Seed Inventaris (Master Katalog, SEKARANG TANPA KOLOM STOK)
+INSERT INTO inventaris (sku, nama_bibit, harga_per_dus) VALUES
+('SKU-11111111-2222-3333-4444-555555555555', 'Tomat Ceri (50 pcs)', 150000.00),
+('SKU-66666666-7777-8888-9999-000000000000', 'Cabai Rawit Merah (50 pcs)', 125000.00),
+('SKU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', 'Bawang Merah Super (50 pcs)', 200000.00);
 
--- Seed Inventaris (SKU menggunakan UUID)
-INSERT INTO inventaris (sku, nama_bibit, harga_per_dus, stok_aktual_dus) VALUES
-('SKU-11111111-2222-3333-4444-555555555555', 'Tomat Ceri (50 pcs)', 150000.00, 100),
-('SKU-66666666-7777-8888-9999-000000000000', 'Cabai Rawit Merah (50 pcs)', 125000.00, 250),
-('SKU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', 'Bawang Merah Super (50 pcs)', 200000.00, 50);
+-- Seed Stok Gudang (Alokasi Fisik Barang dipecah ke Gudang 1 dan Gudang 2)
+INSERT INTO stok_gudang (sku, id_gudang, stok_aktual_dus) VALUES
+-- Stok Tomat Ceri (Total di sistem: 150)
+('SKU-11111111-2222-3333-4444-555555555555', 'gudang1', 100),
+('SKU-11111111-2222-3333-4444-555555555555', 'gudang2', 50),
+
+-- Stok Cabai Rawit Merah (Total di sistem: 225)
+('SKU-66666666-7777-8888-9999-000000000000', 'gudang1', 75),
+('SKU-66666666-7777-8888-9999-000000000000', 'gudang2', 150),
+
+-- Stok Bawang Merah Super (Total di sistem: 280)
+('SKU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', 'gudang1', 200),
+('SKU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', 'gudang2', 80);

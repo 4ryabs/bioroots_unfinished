@@ -44,8 +44,8 @@
         <div class="flex justify-between items-end mb-6">
             <div>
                 <h2 class="text-2xl font-bold text-gray-800">Daftar Transaksi (Workspace: <%= user.username %>)</h2>
-                <p class="text-sm text-gray-500">Konfirmasi pembayaran untuk memicu perintah ke Gudang. Data terisolasi.
-                </p>
+                <p class="text-sm text-gray-500">Konfirmasi pembayaran, periksa alamat, dan teruskan order ke Gudang
+                    spesifik.</p>
             </div>
             <button onclick="loadOrders()"
                 class="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium transition shadow-sm">
@@ -64,16 +64,17 @@
                     <tr>
                         <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Order
                             ID & Waktu</th>
-                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Pembeli
-                        </th>
+                        <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Data
+                            Pembeli</th>
                         <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Detail
                             Item</th>
                         <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Total
                             Bayar</th>
                         <th class="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status
                         </th>
-                        <th class="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider">Aksi
-                        </th>
+                        <th
+                            class="px-6 py-3 text-right text-xs font-bold text-gray-500 uppercase tracking-wider min-w-[150px]">
+                            Aksi</th>
                     </tr>
                 </thead>
                 <tbody id="tableBody" class="bg-white divide-y divide-gray-200">
@@ -100,19 +101,9 @@
                 const res = await fetch(`${API_URL}/pesanan`);
                 const data = await res.json();
 
-                // FILTER: Logika "Pool & Claim" yang sangat ketat
                 const myOrders = data.filter(order => {
-                    // Manager bisa melihat semua data tanpa terkecuali
                     if (CURRENT_USER !== 'kasir1' && CURRENT_USER !== 'kasir2') return true;
-
-                    // KONDISI 1: Pesanan baru masuk dari Website (Belum diklaim siapa-siapa)
-                    // Akan muncul di SEMUA layar kasir yang sedang login saat itu
-                    if (order.status_aktual === 'PENDING' && order.id_kasir === 'SYSTEM_WEB') {
-                        return true;
-                    }
-
-                    // KONDISI 2: Pesanan sudah ditangani (Lunas/Dikirim)
-                    // HANYA muncul di layar kasir yang mengeksekusinya. Kasir lain tidak bisa mengintip!
+                    if (order.status_aktual === 'PENDING' && order.id_kasir === 'SYSTEM_WEB') return true;
                     return order.id_kasir === CURRENT_USER;
                 });
 
@@ -131,7 +122,6 @@
             tableBody.innerHTML = orders.map(order => {
                 const date = new Date(order.waktu_transaksi).toLocaleString('id-ID');
 
-                // Render Detail Items dengan rapi
                 let itemsHtml = '-';
                 if (order.items) {
                     const parsedItems = typeof order.items === 'string' ? JSON.parse(order.items) : order.items;
@@ -145,53 +135,87 @@
                 let statusBadge = '';
                 let actionBtn = '-';
 
+                // LOGIKA UI BARU UNTUK KASIR
                 if (order.status_aktual === 'PENDING') {
                     statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">Menunggu Bayar</span>`;
-                    // Tombol lunas tersedia untuk siapa saja yang melihatnya pertama kali
-                    actionBtn = `<button onclick="prosesPembayaran('${order.order_id}')" class="bg-bioroots hover:bg-green-700 text-white text-xs font-bold py-1.5 px-3 rounded shadow transition w-full">Lunas</button>`;
-                } else if (order.status_aktual === 'PAID') {
-                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Lunas (Ke Gudang)</span>`;
-                } else if (order.status_aktual === 'PACKED') {
-                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">Siap Dikirim</span>`;
-                } else if (order.status_aktual === 'DELIVERED') {
-                    statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Terkirim</span>`;
+
+                    // Menambahkan Select Option untuk Gudang Tujuan
+                    actionBtn = `
+                        <div class="flex flex-col gap-2">
+                            <select id="gudang-${order.order_id}" class="text-xs border border-gray-300 rounded p-1.5 outline-none focus:ring-1 focus:ring-bioroots w-full bg-gray-50 font-medium text-gray-700 cursor-pointer">
+                                <option value="" disabled selected>-- Pilih Gudang Tujuan --</option>
+                                <option value="gudang1">Kirim ke Gudang 1</option>
+                                <option value="gudang2">Kirim ke Gudang 2</option>
+                            </select>
+                            <button onclick="prosesPembayaran('${order.order_id}')" class="bg-bioroots hover:bg-green-700 text-white text-xs font-bold py-2 px-3 rounded shadow transition w-full">Lunas & Teruskan</button>
+                        </div>
+                    `;
+                } else {
+                    if (order.status_aktual === 'PAID') {
+                        statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">Lunas (Di ${order.id_gudang_tujuan || 'Gudang'})</span>`;
+                    } else if (order.status_aktual === 'PACKED') {
+                        statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-purple-100 text-purple-800">Siap Dikirim</span>`;
+                    } else if (order.status_aktual === 'DELIVERED') {
+                        statusBadge = `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Terkirim</span>`;
+                    }
+                    actionBtn = `<span class="text-xs text-gray-400 italic">Diselesaikan</span>`;
                 }
 
                 return `
                     <tr class="hover:bg-gray-50 transition align-top">
                         <td class="px-6 py-4">
                             <div class="text-sm font-bold text-gray-900" title="${order.order_id}">${order.order_id.substring(0, 13)}...</div>
-                            <div class="text-xs text-gray-500">${date}</div>
+                            <div class="text-xs text-gray-500 mt-1">${date}</div>
                         </td>
-                        <td class="px-6 py-4 text-sm text-gray-700">
-                            <div class="font-bold">${order.nama_pembeli || order.id_pembeli}</div>
+                        <td class="px-6 py-4 max-w-[250px]">
+                            <div class="text-sm font-bold text-gray-900 mb-1">${order.nama_pembeli || order.id_pembeli}</div>
+                            <div class="text-xs text-gray-600 mb-1 flex items-start gap-1">
+                                <span>📞</span> ${order.kontak_pembeli || '-'}
+                            </div>
+                            <div class="text-xs text-gray-500 flex items-start gap-1" title="${order.alamat_pembeli || '-'}">
+                                <span>📍</span> <span class="truncate">${order.alamat_pembeli || '-'}</span>
+                            </div>
                         </td>
                         <td class="px-6 py-4 min-w-[200px]">${itemsHtml}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${formatRupiah(order.total_bayar)}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">${formatRupiah(order.total_bayar)}</td>
                         <td class="px-6 py-4 whitespace-nowrap">${statusBadge}</td>
-                        <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">${actionBtn}</td>
+                        <td class="px-6 py-4 text-right">${actionBtn}</td>
                     </tr>
                 `;
             }).join('');
         }
 
         async function prosesPembayaran(orderId) {
-            const confirmMsg = `Yakin pesanan lunas?\nStok inventaris akan dipotong dan pesanan ini akan masuk ke riwayat Anda.`;
+            // Mengambil nilai Gudang Tujuan dari Dropdown
+            const selectGudang = document.getElementById(`gudang-${orderId}`);
+            const gudangTujuan = selectGudang.value;
+
+            // Validasi agar Kasir tidak lupa memilih gudang
+            if (!gudangTujuan) {
+                alert("Pilih Gudang Tujuan terlebih dahulu sebelum mengkonfirmasi pembayaran!");
+                selectGudang.focus();
+                return;
+            }
+
+            const confirmMsg = `Yakin pesanan lunas dan ditugaskan ke ${gudangTujuan}?\nStok inventaris akan dipotong spesifik dari gudang tersebut.`;
             if (!confirm(confirmMsg)) return;
 
             try {
+                // UPDATE PAYLOAD: Menambahkan id_gudang_tujuan
                 const res = await fetch(`${API_URL}/kasir/pay`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ order_id: orderId, id_kasir: CURRENT_USER })
+                    body: JSON.stringify({
+                        order_id: orderId,
+                        id_kasir: CURRENT_USER,
+                        id_gudang_tujuan: gudangTujuan
+                    })
                 });
 
                 const result = await res.json();
 
                 if (res.ok) {
-                    showToast('✅ Pembayaran Berhasil!', `Pesanan lunas dan event terkirim ke Gudang.`, 'bg-green-500');
-                    // Karena kita pakai Socket.io, ini akan memicu refresh di SEMUA browser kasir,
-                    // sehingga pesanan ini otomatis hilang dari layar kasir sebelahnya!
+                    showToast('✅ Pembayaran Berhasil!', `Order diteruskan ke ${gudangTujuan}.`, 'bg-green-500');
                     socket.emit('pesanan_diklaim');
                     loadOrders();
                 } else {
@@ -205,7 +229,7 @@
 
         function showToast(title, message, bgColor) {
             const toast = document.createElement('div');
-            toast.className = `${bgColor} text-white px-4 py-3 rounded-lg shadow-lg animate-fade-in max-w-sm`;
+            toast.className = `${bgColor} text-white px-4 py-3 rounded-lg shadow-lg animate-fade-in max-w-sm z-50`;
             toast.innerHTML = `<strong>${title}</strong><br><span class="text-sm">${message}</span>`;
             toastContainer.appendChild(toast);
             setTimeout(() => { toast.remove(); }, 5000);
@@ -220,7 +244,6 @@
             }
         });
 
-        // Memastikan layar kasir lain ikut merefresh data saat ada yang mengklaim pesanan
         socket.on('payment_completed', () => loadOrders());
         socket.on('delivery_completed', () => loadOrders());
 
